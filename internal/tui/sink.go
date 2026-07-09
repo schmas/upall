@@ -12,20 +12,20 @@ import (
 const flushInterval = 40 * time.Millisecond
 
 // Sink implements engine.Sink for the TUI by forwarding runner events into the
-// Bubble Tea program as messages. Output lines are coalesced and flushed on a
-// tick so a chatty step cannot flood the update loop with one message per line.
+// Bubble Tea program as messages. Raw output chunks are coalesced and flushed on
+// a tick so a chatty step cannot flood the update loop with one message per read.
 // The flush holds the lock across the send, giving natural backpressure (and
 // preserving order) if the program's queue fills.
 type Sink struct {
 	p       *tea.Program
 	mu      sync.Mutex
-	pending map[int][][]byte
+	pending map[int][]byte
 	stop    chan struct{}
 }
 
 // NewSink builds a sink bound to a running program.
 func NewSink(p *tea.Program) *Sink {
-	return &Sink{p: p, pending: map[int][][]byte{}, stop: make(chan struct{})}
+	return &Sink{p: p, pending: map[int][]byte{}, stop: make(chan struct{})}
 }
 
 // Start begins the periodic flush loop; Stop ends it (flushing once more).
@@ -53,18 +53,19 @@ func (s *Sink) flush() {
 		return
 	}
 	batch := s.pending
-	s.pending = map[int][][]byte{}
-	s.p.Send(linesMsg(batch))
+	s.pending = map[int][]byte{}
+	s.p.Send(bytesMsg(batch))
 }
 
-// Line buffers a line for the next flush.
-func (s *Sink) Line(i int, b []byte) {
+// Output buffers a raw output chunk for the next flush. The engine reuses its
+// read buffer between calls, so the bytes are copied (via append) on retain.
+func (s *Sink) Output(i int, p []byte) {
 	s.mu.Lock()
-	s.pending[i] = append(s.pending[i], b)
+	s.pending[i] = append(s.pending[i], p...)
 	s.mu.Unlock()
 }
 
-// StepStart, StepDone and Skip flush any buffered lines first so a step's output
+// StepStart, StepDone and Skip flush any buffered output first so a step's output
 // is always delivered before its terminal event.
 func (s *Sink) StepStart(i int) {
 	s.flush()

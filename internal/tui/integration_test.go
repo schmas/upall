@@ -39,7 +39,7 @@ func TestProgramQuitsOnQ(t *testing.T) {
 	// Confirm the preview to start, simulate a completed run, then quit.
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	tm.Send(startMsg{0})
-	tm.Send(linesMsg{0: {[]byte("output line")}})
+	tm.Send(bytesMsg{0: []byte("output line\r\n")})
 	tm.Send(doneMsg{i: 0, res: engine.Result{State: engine.StateOK}})
 	tm.Send(startMsg{1})
 	tm.Send(doneMsg{i: 1, res: engine.Result{State: engine.StateOK}})

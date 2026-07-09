@@ -12,9 +12,10 @@ import (
 
 type startMsg struct{ i int }
 
-// linesMsg is a coalesced batch of output lines keyed by step index. Batching
-// (flushed on a tick, not per line) keeps heavy output from flooding the loop.
-type linesMsg map[int][][]byte
+// bytesMsg is a coalesced batch of raw pty output keyed by step index. Batching
+// (flushed on a tick, not per chunk) keeps heavy output from flooding the loop;
+// the update loop feeds each step's bytes to its virtual-terminal emulator.
+type bytesMsg map[int][]byte
 
 type doneMsg struct {
 	i   int

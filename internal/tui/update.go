@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/schmas/upall/internal/engine"
 )
@@ -37,14 +36,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case linesMsg:
-		for i, lines := range msg {
-			for _, ln := range lines {
-				m.rings[i].append(sanitize(ln))
-			}
+	case bytesMsg:
+		for i, b := range msg {
+			// Only the update goroutine writes to an emulator, so the plain
+			// (non-Safe) emulator is race-free; the drain goroutine started in
+			// New keeps Write from blocking on the emulator's reply pipe.
+			_, _ = m.terms[i].Write(b)
 		}
 		// A single selected step rebuilds per batch (responsive live follow);
-		// "All logs" concatenates every ring, so it is throttled to the tick.
+		// "All logs" concatenates every emulator, so it is throttled to the tick.
 		if m.isAllLogs() {
 			m.dirty = true
 		} else if _, touched := msg[m.sel]; touched {
@@ -238,7 +238,7 @@ func (m *Model) retry() tea.Cmd {
 		return nil
 	}
 	i := m.sel
-	m.rings[i].reset()
+	resetTerm(m.terms[i])
 	m.states[i] = engine.StatePending
 	m.durs[i] = engine.Result{}
 	m.running = true
@@ -258,7 +258,7 @@ func (m *Model) restartAll() tea.Cmd {
 		return nil
 	}
 	for i := range m.steps {
-		m.rings[i].reset()
+		resetTerm(m.terms[i])
 		m.states[i] = engine.StatePending
 		m.durs[i] = engine.Result{}
 		m.starts[i] = time.Time{}
@@ -303,22 +303,28 @@ func (m *Model) resize(w, h int) {
 	m.vp.Width = logW
 	m.vp.Height = logH
 	m.ready = true
-	// Match the running child's pty to the log pane so wrapping/progress fit.
+	// Resize every emulator to the log pane so each wraps its own output to the
+	// visible width, then match the running child's pty so its own wrapping and
+	// progress redraws line up with what the emulator expects.
+	for _, e := range m.terms {
+		e.Resize(logW, logH)
+	}
 	m.rc.runner.SetSize(uint16(logH), uint16(logW))
 	m.rebuildContent()
 }
 
-// rebuildContent regenerates the viewport body from the selected ring (or the
-// concatenated "All logs"), wrapped ANSI-safely to the pane width.
+// rebuildContent regenerates the viewport body from the selected step's emulator
+// (or the concatenated "All logs"). The emulator already wrapped its output to
+// the pane width on resize, so no extra hard-wrap is applied here.
 func (m *Model) rebuildContent() {
 	if !m.ready {
 		return
 	}
 	if m.isAllLogs() {
-		m.vp.SetContent(m.wrap(m.allLogsBody()))
+		m.vp.SetContent(m.allLogsBody())
 		return
 	}
-	m.vp.SetContent(m.wrap(m.rings[m.sel].String()))
+	m.vp.SetContent(renderTerm(m.terms[m.sel]))
 }
 
 func (m *Model) allLogsBody() string {
@@ -329,21 +335,8 @@ func (m *Model) allLogsBody() string {
 		}
 		b.WriteString(sepStyle.Render("── " + st.Label + " ──"))
 		b.WriteString("\n")
-		b.WriteString(m.rings[i].String())
+		b.WriteString(renderTerm(m.terms[i]))
 		b.WriteString("\n")
 	}
 	return b.String()
-}
-
-// wrap hard-wraps each line to the viewport width, preserving ANSI styling.
-func (m *Model) wrap(s string) string {
-	w := m.vp.Width
-	if w < 1 {
-		return s
-	}
-	lines := strings.Split(s, "\n")
-	for i, ln := range lines {
-		lines[i] = ansi.Hardwrap(ln, w, true)
-	}
-	return strings.Join(lines, "\n")
 }

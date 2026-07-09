@@ -9,6 +9,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/schmas/upall/internal/engine"
 )
@@ -27,6 +28,14 @@ type Sink struct {
 	color  bool
 	runDir string
 	width  int
+
+	// mu guards buf. Steps run serially, and runCmd joins its copy goroutine
+	// before StepDone, so on the common path there is no contention. It only
+	// matters on the rare abandon path (a wedged pty slave-holder that outlives
+	// the drain grace): a late Output from the abandoned copy goroutine must not
+	// race the next step's flush over the shared partial-line buffer.
+	mu  sync.Mutex
+	buf []byte // partial line carried between Output chunks
 }
 
 // New builds a plain sink over steps, writing to out. color enables ANSI
@@ -87,8 +96,37 @@ func (s *Sink) StepStart(i int) {
 	s.rule()
 }
 
-// Line streams one line of step output, stripping ANSI when color is off.
-func (s *Sink) Line(_ int, b []byte) {
+// Output buffers a raw chunk and prints every complete line it now holds. Line
+// splitting lives here (the engine hands over raw pty bytes): each full line is
+// stripped of ANSI when color is off, has a trailing carriage return removed
+// (CRLF / bare-CR redraws), and is written with a newline. A trailing partial
+// line is held until the next chunk or a StepDone flush.
+func (s *Sink) Output(_ int, p []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.buf = append(s.buf, p...)
+	for {
+		idx := bytes.IndexByte(s.buf, '\n')
+		if idx < 0 {
+			break
+		}
+		s.emitLine(s.buf[:idx])
+		s.buf = s.buf[idx+1:]
+	}
+}
+
+// flushLine prints any buffered partial line (a step whose last line had no
+// trailing newline) so no output is dropped at the step boundary.
+func (s *Sink) flushLine() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.buf) > 0 {
+		s.emitLine(s.buf)
+		s.buf = s.buf[:0]
+	}
+}
+
+func (s *Sink) emitLine(b []byte) {
 	if !s.color {
 		b = ansiRE.ReplaceAll(b, nil)
 	}
@@ -97,8 +135,11 @@ func (s *Sink) Line(_ int, b []byte) {
 	s.out.Write([]byte{'\n'})
 }
 
-// StepDone records the outcome and prints the closing per-step line.
+// StepDone records the outcome and prints the closing per-step line. Any
+// buffered partial output line is flushed first so nothing is lost at the
+// boundary.
 func (s *Sink) StepDone(i int, res engine.Result) {
+	s.flushLine()
 	s.states[i] = res.State
 	s.durs[i] = res
 	label := s.steps[i].Label

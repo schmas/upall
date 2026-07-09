@@ -66,9 +66,9 @@ func TestStepLifecycle(t *testing.T) {
 	if m.states[0] != engine.StateRunning || m.activeIdx != 0 {
 		t.Fatalf("after start: state=%v active=%d", m.states[0], m.activeIdx)
 	}
-	m.Update(linesMsg{0: {[]byte("hello"), []byte("world")}})
-	if m.rings[0].size != 2 {
-		t.Fatalf("ring size = %d, want 2", m.rings[0].size)
+	m.Update(bytesMsg{0: []byte("hello\r\nworld\r\n")})
+	if got := renderTerm(m.terms[0]); !strings.Contains(got, "hello") || !strings.Contains(got, "world") {
+		t.Fatalf("emulator content = %q, want hello+world", got)
 	}
 	m.Update(doneMsg{i: 0, res: engine.Result{State: engine.StateOK}})
 	if m.states[0] != engine.StateOK || m.activeIdx != -1 {
@@ -231,10 +231,11 @@ func TestMouseClickSelectsInPreview(t *testing.T) {
 	}
 }
 
-// TestLogLinesStayInsideBox drives the real linesMsg path and proves the two
+// TestLogLinesStayInsideBox drives the real bytesMsg path and proves the two
 // overflow modes from the reported screenshots are gone: carriage-return progress
-// redraws no longer reach the terminal (left overflow over the master pane), and
-// every wrapped line fits the pane width (right-edge overflow).
+// redraws collapse to their final frame (left overflow over the master pane), and
+// every rendered line fits the pane width (right-edge overflow) because the
+// emulator wraps to its own column count.
 func TestLogLinesStayInsideBox(t *testing.T) {
 	m, _, _ := testModel(demoSteps())
 	sizeUp(m) // wide layout, viewport sized
@@ -242,20 +243,23 @@ func TestLogLinesStayInsideBox(t *testing.T) {
 	m.sel = 0
 	m.follow = false
 
-	progress := []byte("Downloading 16MB\rDownloading 200MB\rDownloaded 333MB\x1b[K")
-	long := []byte(strings.Repeat("cask-claude-", 40)) // ~480 cols, must wrap
-	m.Update(linesMsg{0: {progress, long}})
+	progress := "Downloading 16MB\rDownloading 200MB\rDownloaded 333MB\x1b[K\r\n"
+	long := strings.Repeat("cask-claude-", 40) + "\r\n" // ~480 cols, must wrap
+	m.Update(bytesMsg{0: []byte(progress + long)})
 
-	got := m.rings[0].String()
+	got := renderTerm(m.terms[0])
 	if strings.ContainsRune(got, '\r') {
-		t.Errorf("ring retains carriage return: %q", got)
+		t.Errorf("render retains carriage return: %q", got)
 	}
 	if !strings.Contains(got, "Downloaded 333MB") {
 		t.Errorf("progress should collapse to its final frame, got %q", got)
 	}
-	for _, ln := range strings.Split(m.wrap(got), "\n") {
+	if strings.Contains(got, "Downloading 16MB") || strings.Contains(got, "Downloading 200MB") {
+		t.Errorf("overwritten progress frames should be gone, got %q", got)
+	}
+	for _, ln := range strings.Split(got, "\n") {
 		if w := ansi.StringWidth(ln); w > m.vp.Width {
-			t.Fatalf("wrapped line width %d exceeds pane %d: %q", w, m.vp.Width, ln)
+			t.Fatalf("rendered line width %d exceeds pane %d: %q", w, m.vp.Width, ln)
 		}
 	}
 }
@@ -316,19 +320,5 @@ func TestRestartAllResetsAndRelaunches(t *testing.T) {
 	m.restartAll()
 	if *launched != 2 {
 		t.Error("restart must not relaunch while a run is active")
-	}
-}
-
-func TestRingEviction(t *testing.T) {
-	r := newRing(3)
-	for _, s := range []string{"1", "2", "3", "4", "5"} {
-		r.append([]byte(s))
-	}
-	if got := r.String(); got != "3\n4\n5" {
-		t.Fatalf("ring = %q, want last 3", got)
-	}
-	r.reset()
-	if r.String() != "" {
-		t.Error("reset should empty the ring")
 	}
 }

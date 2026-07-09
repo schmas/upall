@@ -10,17 +10,19 @@ import (
 	"time"
 )
 
-// recSink records everything the runner reports, guarded for -race.
+// recSink records everything the runner reports, guarded for -race. Output now
+// arrives as raw pty chunks, so the sink reassembles the stream per step and
+// splits it into logical lines on demand (mirroring what a real sink does).
 type recSink struct {
-	mu     sync.Mutex
-	starts []int
-	skips  map[int]string
-	lines  map[int][]string
-	done   map[int]Result
+	mu    sync.Mutex
+	start []int
+	skips map[int]string
+	raw   map[int][]byte
+	done  map[int]Result
 }
 
 func newRecSink() *recSink {
-	return &recSink{skips: map[int]string{}, lines: map[int][]string{}, done: map[int]Result{}}
+	return &recSink{skips: map[int]string{}, raw: map[int][]byte{}, done: map[int]Result{}}
 }
 
 func (s *recSink) Skip(i int, reason string) {
@@ -31,22 +33,33 @@ func (s *recSink) Skip(i int, reason string) {
 func (s *recSink) StepStart(i int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.starts = append(s.starts, i)
+	s.start = append(s.start, i)
 }
-func (s *recSink) Line(i int, b []byte) {
+func (s *recSink) Output(i int, p []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.lines[i] = append(s.lines[i], strings.TrimRight(string(b), "\r"))
+	s.raw[i] = append(s.raw[i], p...) // copy: io.Copy reuses its buffer
 }
 func (s *recSink) StepDone(i int, res Result) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.done[i] = res
 }
+
+// linesOf splits a step's captured raw output into trimmed logical lines, so the
+// existing assertions on line content keep working over the raw-chunk contract.
 func (s *recSink) linesOf(i int) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]string(nil), s.lines[i]...)
+	raw := strings.TrimRight(string(s.raw[i]), "\n")
+	if raw == "" {
+		return nil
+	}
+	lines := strings.Split(raw, "\n")
+	for j, ln := range lines {
+		lines[j] = strings.TrimRight(ln, "\r")
+	}
+	return lines
 }
 
 func TestRunAllStreamsLinesInOrder(t *testing.T) {
@@ -134,13 +147,8 @@ func TestANSIColorSurvivesPTY(t *testing.T) {
 	steps := []Step{{Key: "c", Run: []string{`printf '\033[31mred\033[0m\n'`}}}
 	NewRunner("", sink).RunAll(context.Background(), steps)
 
-	var sawESC bool
 	sink.mu.Lock()
-	for _, ln := range sink.lines[0] {
-		if bytes.Contains([]byte(ln), []byte{0x1b}) {
-			sawESC = true
-		}
-	}
+	sawESC := bytes.Contains(sink.raw[0], []byte{0x1b})
 	sink.mu.Unlock()
 	if !sawESC {
 		t.Fatalf("expected ESC byte to survive pty capture, lines=%v", sink.linesOf(0))
