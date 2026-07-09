@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -78,9 +79,10 @@ func TestResolveDropsDisabled(t *testing.T) {
 	}
 }
 
-// TestEmbeddedOrderMatchesV2 asserts the resolved run order equals v2's, driven
-// by the explicit `order` fields (not the alphabetical embed glob order).
-func TestEmbeddedOrderMatchesV2(t *testing.T) {
+// TestEmbeddedRunOrder asserts the resolved run order is driven by each step's
+// explicit `order` (not the alphabetical embed glob order), and that exactly one
+// per-OS step applies to a given host — the apt one on Ubuntu.
+func TestEmbeddedRunOrder(t *testing.T) {
 	defs, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -89,14 +91,36 @@ func TestEmbeddedOrderMatchesV2(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"os", "nix", "chezmoi", "brew", "mise", "rust", "uv", "claude", "ck", "fisher", "atuin"}
-	got := keysOf(resolved)
+	// Non-decreasing order: sequence comes from `order`, never the glob order.
+	for i := 1; i < len(resolved); i++ {
+		if resolved[i-1].Order > resolved[i].Order {
+			t.Fatalf("resolved not sorted by order: %v", keysOf(resolved))
+		}
+	}
+	// Exactly one OS step applies on Ubuntu.
+	var osApplied []string
+	for _, r := range resolved {
+		if strings.HasPrefix(r.Key, "os-") && r.Applies {
+			osApplied = append(osApplied, r.Key)
+		}
+	}
+	if len(osApplied) != 1 || osApplied[0] != "os-apt" {
+		t.Fatalf("OS steps applying on Ubuntu = %v, want [os-apt]", osApplied)
+	}
+	// The toolchain steps keep v2's relative order after the OS step.
+	want := []string{"nix", "chezmoi", "brew", "mise", "rust", "uv", "claude", "ck", "fisher", "atuin"}
+	var got []string
+	for _, r := range resolved {
+		if !strings.HasPrefix(r.Key, "os-") {
+			got = append(got, r.Key)
+		}
+	}
 	if len(got) != len(want) {
-		t.Fatalf("keys = %v, want %v", got, want)
+		t.Fatalf("toolchain keys = %v, want %v", got, want)
 	}
 	for i := range want {
 		if got[i] != want[i] {
-			t.Fatalf("order[%d] = %q, want %q (full: %v)", i, got[i], want[i], got)
+			t.Fatalf("toolchain order[%d] = %q, want %q (full: %v)", i, got[i], want[i], got)
 		}
 	}
 }
@@ -168,14 +192,14 @@ func TestSelectRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all) != 2 {
-		t.Fatalf("run set = %d steps, want 2 (c excluded, not applicable)", len(all))
+	// b (detect miss) and c (not applicable) are dropped entirely; only a runs.
+	if len(all) != 1 || all[0].Key != "a" {
+		t.Fatalf("run set = %v, want [a] (b hidden: detect failed, c hidden: n/a)", keysOfSteps(all))
 	}
-	if all[0].Skip {
-		t.Error("a should not be skipped")
-	}
-	if !all[1].Skip || all[1].SkipReason == "" {
-		t.Error("b should be skipped with reason (detect failed)")
+	// A detect miss is still a KNOWN key, so selecting it is not an error — it
+	// just resolves to nothing runnable.
+	if none, err := SelectRun(resolved, []string{"b"}); err != nil || len(none) != 0 {
+		t.Errorf("selecting detect-miss b = %v, err=%v; want empty", keysOfSteps(none), err)
 	}
 	sub, _ := SelectRun(resolved, []string{"a"})
 	if len(sub) != 1 || sub[0].Key != "a" {

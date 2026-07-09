@@ -1,13 +1,51 @@
 schema = 1
 
-# OS package updates (apt/dnf/pacman/mas/...). Wrapped by the `osupdate` script.
-# The only sudo step: sudo is primed before the run and kept alive for the
-# session so the pty child (stdin=/dev/null) never has to prompt.
+# OS package updates, one step per platform. Only the step whose os/distro
+# predicate matches the host resolves, and it only shows when its detect passes,
+# so exactly one "OS Update" appears (or none, if the tool is absent). Override
+# any of these — or add your own distro — under $XDG_CONFIG_HOME/upall/steps.d/.
+
+# macOS: Mac App Store apps only (no sudo). System `softwareupdate` is left out
+# on purpose; run it manually when you want OS/security updates and a reboot.
 [[step]]
-key     = "os"
+key     = "os-macos"
 label   = "OS Update"
-detect  = "command -v osupdate"
-run     = ["osupdate"]
+os      = ["darwin"]
+detect  = "command -v mas"
+run     = ["mas upgrade"]
+sudo    = false
+order   = 10
+timeout = "60m"
+
+# Debian/Ubuntu and derivatives (matched via distro ID or ID_LIKE=debian).
+[[step]]
+key     = "os-apt"
+label   = "OS Update"
+distro  = ["debian", "ubuntu"]
+detect  = "command -v apt-get"
+run     = ["apt-get update", "apt-get upgrade -y"]
+sudo    = true
+order   = 10
+timeout = "60m"
+
+# Fedora/RHEL family.
+[[step]]
+key     = "os-dnf"
+label   = "OS Update"
+distro  = ["fedora", "rhel", "centos", "rocky", "almalinux"]
+detect  = "command -v dnf"
+run     = ["dnf upgrade -y"]
+sudo    = true
+order   = 10
+timeout = "60m"
+
+# Arch family.
+[[step]]
+key     = "os-pacman"
+label   = "OS Update"
+distro  = ["arch", "manjaro", "endeavouros"]
+detect  = "command -v pacman"
+run     = ["pacman -Syu --noconfirm"]
 sudo    = true
 order   = 10
 timeout = "60m"

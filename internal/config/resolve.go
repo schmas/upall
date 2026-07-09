@@ -42,9 +42,11 @@ func Resolve(defs []StepDef, plat platform.Platform) ([]Resolved, error) {
 	return out, nil
 }
 
-// SelectRun builds the executable step list: applicable steps only, with a
-// detect miss turned into a skip (so it stays visible in the UI), optionally
-// narrowed to `selected` keys. An unknown selected key is an error.
+// SelectRun builds the executable step list: steps that apply to the host AND
+// whose detect passed, optionally narrowed to `selected` keys. Steps that do not
+// apply, or whose tool is not installed (detect miss), are dropped entirely so
+// they never appear in the UI. An unknown selected key is an error; use `--list`
+// to see every resolved step with its applies/detect status.
 func SelectRun(resolved []Resolved, selected []string) ([]engine.Step, error) {
 	known := make(map[string]bool, len(resolved))
 	for _, r := range resolved {
@@ -59,18 +61,13 @@ func SelectRun(resolved []Resolved, selected []string) ([]engine.Step, error) {
 	}
 	var out []engine.Step
 	for _, r := range resolved {
-		if !r.Applies {
+		if !r.Applies || !r.DetectOK {
 			continue
 		}
 		if len(sel) > 0 && !sel[r.Key] {
 			continue
 		}
-		st := r.Step
-		if !r.DetectOK {
-			st.Skip = true
-			st.SkipReason = "not detected"
-		}
-		out = append(out, st)
+		out = append(out, r.Step)
 	}
 	return out, nil
 }

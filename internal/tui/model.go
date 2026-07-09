@@ -21,6 +21,8 @@ const (
 	ringCap       = 1500 // lines kept per step in the viewport (full log on disk)
 	masterWidth   = 30   // master pane width in wide layout
 	wideThreshold = 90   // cols at/above which panes sit side by side
+	headerHeight  = 3    // rendered rows of the bordered title/header
+	previewTop    = 4    // header rows + one blank line before the preview list
 )
 
 // runControl holds everything needed to drive and cancel a run. The model holds
@@ -60,6 +62,7 @@ type Model struct {
 	dirty      bool // All-logs content needs a rebuild (throttled to the tick)
 	activeIdx  int
 	totalStart time.Time
+	totalEnd   time.Time // set when a run goes idle; freezes the header timer
 
 	width, height int
 	wide          bool
@@ -106,6 +109,7 @@ func (m *Model) begin() {
 	m.started = true
 	m.running = true
 	m.totalStart = time.Now()
+	m.totalEnd = time.Time{}
 	m.rc.launch(func() { m.rc.runner.RunAll(m.rc.ctx, m.rc.steps) })
 }
 

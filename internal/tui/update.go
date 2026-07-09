@@ -23,6 +23,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
+
 	case startMsg:
 		m.states[msg.i] = engine.StateRunning
 		m.starts[msg.i] = time.Now()
@@ -37,7 +40,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case linesMsg:
 		for i, lines := range msg {
 			for _, ln := range lines {
-				m.rings[i].append(ln)
+				m.rings[i].append(sanitize(ln))
 			}
 		}
 		// A single selected step rebuilds per batch (responsive live follow);
@@ -71,6 +74,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case RunDoneMsg:
 		m.running = false
 		m.activeIdx = -1
+		m.totalEnd = time.Now()
 		return m, nil
 
 	case tickMsg:
@@ -166,6 +170,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Retry):
 		return m, m.retry()
 
+	case key.Matches(msg, m.keys.Restart):
+		return m, m.restartAll()
+
 	case key.Matches(msg, m.keys.Pager):
 		if m.sel < len(m.steps) && m.runDir != "" {
 			return m, pagerCmd(engine.LogPath(m.runDir, m.sel+1, m.steps[m.sel].Key))
@@ -182,6 +189,42 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	var cmd tea.Cmd
+	m.vp, cmd = m.vp.Update(msg)
+	return m, cmd
+}
+
+// handleMouse maps a left-click in the master pane to a step selection (or the
+// "All logs" row), in both the preview and the running dashboard. Wheel and
+// motion events fall through to the viewport so scrolling still works.
+func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Button != tea.MouseButtonLeft || msg.Action != tea.MouseActionPress {
+		return m.forwardToViewport(msg)
+	}
+
+	// Preview: the step list starts below the header and one blank line; there
+	// is no "All logs" row yet.
+	if !m.started {
+		if i := msg.Y - previewTop; i >= 0 && i < len(m.steps) {
+			m.sel = i
+		}
+		return m, nil
+	}
+
+	// Running: in the wide layout the master pane is the left column only, so a
+	// click in the log pane should scroll, not reselect.
+	if m.wide && msg.X > masterWidth {
+		return m.forwardToViewport(msg)
+	}
+	if row := msg.Y - headerHeight; row >= 0 && row <= m.allLogsIndex() {
+		m.sel = row
+		m.follow = false
+		m.rebuildContent()
+	}
+	return m, nil
+}
+
+func (m *Model) forwardToViewport(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.vp, cmd = m.vp.Update(msg)
 	return m, cmd
@@ -206,11 +249,35 @@ func (m *Model) retry() tea.Cmd {
 	return nil
 }
 
+// restartAll re-runs every step from a clean slate. Like retry it fires only
+// when no run is active, so it cannot race a live run on shared state; it resets
+// all step state and the total timer, then relaunches RunAll on the still-live
+// session context.
+func (m *Model) restartAll() tea.Cmd {
+	if m.running {
+		return nil
+	}
+	for i := range m.steps {
+		m.rings[i].reset()
+		m.states[i] = engine.StatePending
+		m.durs[i] = engine.Result{}
+		m.starts[i] = time.Time{}
+	}
+	m.running = true
+	m.activeIdx = -1
+	m.follow = true
+	m.totalStart = time.Now()
+	m.totalEnd = time.Time{}
+	m.rebuildContent()
+	m.rc.launch(func() { m.rc.runner.RunAll(m.rc.ctx, m.rc.steps) })
+	return nil
+}
+
 func (m *Model) resize(w, h int) {
 	m.width, m.height = w, h
 	m.wide = w >= wideThreshold
 
-	headerH, footerH := 3, 1
+	headerH, footerH := headerHeight, 1
 	bodyH := h - headerH - footerH
 	if bodyH < 1 {
 		bodyH = 1

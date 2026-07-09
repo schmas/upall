@@ -36,38 +36,28 @@ func (m *Model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.help.View(m.keys))
 }
 
-// renderPreview shows which steps will run (per detect) and waits for the user
-// to confirm before anything executes.
+// renderPreview lists the steps that will run and waits for the user to confirm
+// before anything executes. Steps that do not apply or whose tool is absent were
+// already dropped in SelectRun, so every row here will run.
 func (m *Model) renderPreview() string {
-	willRun := 0
-	for _, s := range m.steps {
-		if !s.Skip {
-			willRun++
-		}
+	w := m.width - 2 // account for border sides
+	if w < 1 {
+		w = 1
 	}
-	skipped := len(m.steps) - willRun
-	title := titleStyle.Width(m.width - 2).Render(
-		fmt.Sprintf("upall  •  %d step(s) will run, %d skipped", willRun, skipped))
+	title := titleStyle.Width(w).Render(
+		fmt.Sprintf("upall  •  %d step(s) will run", len(m.steps)))
 
 	rows := make([]string, 0, len(m.steps))
 	for i, st := range m.steps {
 		rows = append(rows, m.previewRow(i, st))
 	}
-	footer := dimStyle.Render("  ⏎ start · ↑/↓ move · q quit")
+	footer := dimStyle.Render("  ⏎ start · ↑/↓ or click to move · q quit")
 	return lipgloss.JoinVertical(lipgloss.Left, title, "", strings.Join(rows, "\n"), "", footer)
 }
 
 func (m *Model) previewRow(i int, st engine.Step) string {
-	glyph, note := "•", "will run"
-	if st.Skip {
-		glyph = engine.Glyph(engine.StateSkipped)
-		note = "skip"
-		if st.SkipReason != "" {
-			note = "skip — " + st.SkipReason
-		}
-	}
-	label := ansi.Truncate(st.Label, 24, "…")
-	row := fmt.Sprintf("  %s  %-24s  %s", glyph, label, note)
+	label := ansi.Truncate(st.Label, masterWidth, "…")
+	row := fmt.Sprintf("  • %s", label)
 	if i == m.sel {
 		return selectedStyle.Render(row)
 	}
@@ -84,7 +74,13 @@ func (m *Model) renderBody() string {
 }
 
 func (m *Model) renderHeader() string {
-	elapsed := engine.Hms(time.Since(m.totalStart))
+	// The timer ticks live while a run is in flight and freezes at the moment the
+	// run went idle (totalEnd), so a finished dashboard stops counting.
+	end := m.totalEnd
+	if end.IsZero() {
+		end = time.Now()
+	}
+	elapsed := engine.Hms(end.Sub(m.totalStart))
 	strip := m.progressStrip()
 	title := fmt.Sprintf("upall  •  %s   %s", elapsed, strip)
 	w := m.width - 2 // account for border sides
