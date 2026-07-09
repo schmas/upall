@@ -1,7 +1,54 @@
+# === Go ===
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+# binary from `go test -c`
+*.test
+# coverage output
+*.out
+go.work
+go.work.sum
+
+# === Build output ===
+# goreleaser
 /dist/
+# local binary
 /upall
+
+# === Logs ===
 *.log
+
+# === macOS ===
 .DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+*.icloud
+
+# === Editors / IDEs ===
+# JetBrains (whole dir; no shared team settings here)
+.idea/
+# VS Code
+.vscode/
+# Antigravity (Google's VS Code-fork IDE)
+.antigravity/
+
+# === Local tooling / planning (never committed) ===
 .claude/
 .ck-*/
 .handoffs/
