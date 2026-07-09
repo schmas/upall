@@ -3,5 +3,5 @@
 *.log
 .DS_Store
 .claude/
-.ck-plans/
-.ck-docs/
+.ck-*/
+.handoffs/
