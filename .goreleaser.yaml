@@ -1,0 +1,44 @@
+version: 2
+
+project_name: upall
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: upall
+    main: ./cmd/upall
+    binary: upall
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: upall
+    # Must match home/.chezmoiexternal.toml:
+    #   upall_{{ .chezmoi.os }}_{{ .chezmoi.arch }}.tar.gz  (lowercase os/arch)
+    name_template: "upall_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    files:
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  github:
+    owner: schmas
+    name: upall
+  prerelease: auto
+
+changelog:
+  use: github
