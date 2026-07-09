@@ -2,3 +2,6 @@
 /upall
 *.log
 .DS_Store
+.claude/
+.ck-plans/
+.ck-docs/

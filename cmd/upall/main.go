@@ -74,7 +74,10 @@ func run(steps []engine.Step, plainFlag bool) int {
 	stdinTTY := term.IsTerminal(int(os.Stdin.Fd()))
 	useTUI := stdoutTTY && !plainFlag && os.Getenv("NO_COLOR") == ""
 
-	runDir, _ := engine.NewRunDir(keepFromEnv())
+	runDir, err := engine.NewRunDir(keepFromEnv())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "upall: warning: logging disabled: %v\n", err)
+	}
 
 	// The sudo keepalive spans the whole session (both modes), so a retried or
 	// late sudo step never has to prompt inside the pty (stdin=/dev/null).
