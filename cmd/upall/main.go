@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 
 	"golang.org/x/term"
@@ -21,6 +20,7 @@ import (
 	"github.com/schmas/upall/internal/engine"
 	"github.com/schmas/upall/internal/plain"
 	"github.com/schmas/upall/internal/platform"
+	"github.com/schmas/upall/internal/settings"
 	"github.com/schmas/upall/internal/tui"
 )
 
@@ -39,6 +39,27 @@ func main() {
 	case o.version:
 		fmt.Printf("upall %s\n", version)
 		return
+	case o.configPath:
+		fmt.Println(settings.ConfigPath())
+		return
+	case o.initConfig:
+		if err := settings.InitConfig(os.Stdout, o.force); err != nil {
+			fail(err)
+		}
+		return
+	}
+
+	// On a normal run, seed a commented config.toml if the user has none yet, so
+	// there is always a documented file to edit. Best-effort: never fatal.
+	if created, err := settings.EnsureConfig(); err != nil {
+		fmt.Fprintf(os.Stderr, "upall: warning: could not create default config: %v\n", err)
+	} else if created {
+		fmt.Fprintf(os.Stderr, "upall: created default config at %s\n", settings.ConfigPath())
+	}
+
+	set, err := settings.Load()
+	if err != nil {
+		fail(err)
 	}
 
 	plat := platform.Detect()
@@ -63,18 +84,20 @@ func main() {
 		fail(errors.New("no matching steps to run"))
 	}
 
-	os.Exit(run(steps, o.plain))
+	os.Exit(run(steps, o.plain, set))
 }
 
 // run executes steps and returns the process exit code (the number of failed
 // steps). It renders the TUI on an interactive terminal, or plain streaming for
 // --plain / NO_COLOR / a non-TTY stdout.
-func run(steps []engine.Step, plainFlag bool) int {
+func run(steps []engine.Step, plainFlag bool, set settings.Settings) int {
 	stdoutTTY := term.IsTerminal(int(os.Stdout.Fd()))
 	stdinTTY := term.IsTerminal(int(os.Stdin.Fd()))
 	useTUI := stdoutTTY && !plainFlag && os.Getenv("NO_COLOR") == ""
 
-	runDir, err := engine.NewRunDir(keepFromEnv())
+	// History dir is a single root used for both writing new runs and browsing
+	// past ones. Keep honors precedence: UPALL_KEEP env › config › default.
+	runDir, err := engine.NewRunDir(set.History.Dir, settings.ResolveKeep(set.History.Keep))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "upall: warning: logging disabled: %v\n", err)
 	}
@@ -91,7 +114,7 @@ func run(steps []engine.Step, plainFlag bool) int {
 	}
 
 	if useTUI {
-		failed, err := tui.Run(steps, runDir)
+		failed, err := tui.Run(steps, runDir, set)
 		if err != nil {
 			fail(err)
 		}
@@ -101,19 +124,10 @@ func run(steps []engine.Step, plainFlag bool) int {
 	// Plain mode: Ctrl-C / SIGTERM cancels the run and its child.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	sink := plain.New(steps, os.Stdout, false, runDir)
+	sink := plain.New(steps, os.Stdout, false, runDir, set.Notify.Enabled)
 	sink.Begin("upall")
 	engine.NewRunner(runDir, sink).RunAll(ctx, steps)
 	return sink.End("upall")
-}
-
-func keepFromEnv() int {
-	if v := os.Getenv("UPALL_KEEP"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
-		}
-	}
-	return engine.DefaultKeep
 }
 
 func fail(err error) {

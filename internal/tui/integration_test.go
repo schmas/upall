@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/exp/teatest"
 
 	"github.com/schmas/upall/internal/engine"
+	"github.com/schmas/upall/internal/settings"
 )
 
 // integrationModel wires a model with a stubbed run control so teatest can
@@ -26,7 +27,7 @@ func integrationModel(t *testing.T) (*Model, *int) {
 		steps:  demoSteps(),
 		launch: func(func()) { launched++ },
 	}
-	return New(demoSteps(), "", rc), &launched
+	return New(demoSteps(), "", rc, settings.Defaults()), &launched
 }
 
 // TestProgramQuitsOnQ is the end-to-end proof the pty harness could not give:

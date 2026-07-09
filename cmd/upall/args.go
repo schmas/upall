@@ -15,22 +15,29 @@ Usage:
   upall brew mise       Run only the named steps.
   upall --list          List steps (key, label, applies?, detect-ok?).
   upall --plain         Force plain output (no color); still tees logs.
+  upall --init-config   Write a commented config.toml with all defaults.
+  upall --config-path   Print the resolved config file path.
   upall --version       Print version.
   upall -h | --help     Show this help.
 
 Env:
-  UPALL_KEEP=N          Retain N run-log dirs under ~/.cache/upall (default 10).
+  UPALL_KEEP=N          Retain N run-log dirs (default 10). Overrides config.
 
 Steps are config-driven. Defaults are embedded; extend or override them with
 TOML in $XDG_CONFIG_HOME/upall/steps.d/ (fallback ~/.config/upall/steps.d/).
+Keys, theme, history location, and behavior are configurable in
+$XDG_CONFIG_HOME/upall/config.toml (see --init-config).
 `
 
 type opts struct {
-	list     bool
-	plain    bool
-	version  bool
-	help     bool
-	selected []string
+	list       bool
+	plain      bool
+	version    bool
+	help       bool
+	initConfig bool
+	force      bool
+	configPath bool
+	selected   []string
 }
 
 // parseArgs parses the flat argv. Steps are positional; anything starting with
@@ -45,6 +52,12 @@ func parseArgs(argv []string) (opts, error) {
 			o.list = true
 		case "--plain":
 			o.plain = true
+		case "--init-config":
+			o.initConfig = true
+		case "--force":
+			o.force = true
+		case "--config-path":
+			o.configPath = true
 		case "--version", "-V":
 			o.version = true
 		default:

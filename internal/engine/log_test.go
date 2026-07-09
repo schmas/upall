@@ -35,7 +35,8 @@ func TestNewRunDirCreatesLatestSymlink(t *testing.T) {
 	cache := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", cache)
 
-	dir, err := NewRunDir(10)
+	// Empty root falls back to CacheRoot() (<XDG_CACHE_HOME>/upall).
+	dir, err := NewRunDir("", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,5 +50,21 @@ func TestNewRunDirCreatesLatestSymlink(t *testing.T) {
 	}
 	if target != dir {
 		t.Fatalf("latest -> %q, want %q", target, dir)
+	}
+}
+
+// TestNewRunDirHonorsExplicitRoot proves a caller-supplied root (e.g. from
+// [history] dir) is where runs and the latest symlink land, not the cache.
+func TestNewRunDirHonorsExplicitRoot(t *testing.T) {
+	root := t.TempDir()
+	dir, err := NewRunDir(root, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(dir) != root {
+		t.Fatalf("run dir %q not under root %q", dir, root)
+	}
+	if _, err := os.Stat(filepath.Join(root, "latest")); err != nil {
+		t.Fatalf("latest symlink not in root: %v", err)
 	}
 }

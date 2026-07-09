@@ -10,6 +10,7 @@ import (
 
 	"github.com/schmas/upall/internal/engine"
 	"github.com/schmas/upall/internal/plain"
+	"github.com/schmas/upall/internal/settings"
 )
 
 // reapTimeout bounds how long Run waits, after cancelling, for the runner
@@ -20,10 +21,10 @@ const reapTimeout = 5 * time.Second
 // Run drives the full TUI session over steps and returns the failed-step count.
 // On quit it leaves the alt screen and prints the summary to the normal buffer,
 // preserving it in scrollback.
-func Run(steps []engine.Step, runDir string) (int, error) {
+func Run(steps []engine.Step, runDir string, set settings.Settings) (int, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	rc := &runControl{ctx: ctx, cancel: cancel, steps: steps}
-	m := New(steps, runDir, rc)
+	m := New(steps, runDir, rc, set)
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	sink := NewSink(p)
@@ -47,7 +48,7 @@ func Run(steps []engine.Step, runDir string) (int, error) {
 	if fm == nil {
 		fm = m
 	}
-	failed := plain.RenderSummary(os.Stdout, "upall", steps, fm.States(), fm.Durations(), runDir, true)
+	failed := plain.RenderSummary(os.Stdout, "upall", steps, fm.States(), fm.Durations(), runDir, true, set.Notify.Enabled)
 	return failed, err
 }
 

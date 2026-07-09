@@ -1,48 +1,85 @@
 package tui
 
-import "github.com/charmbracelet/bubbles/key"
+import (
+	"github.com/charmbracelet/bubbles/key"
 
-// keyMap is the TUI's key bindings; it also satisfies help.KeyMap so the help
-// bar renders straight from these definitions.
+	"github.com/schmas/upall/internal/settings"
+)
+
+// keyMap is the TUI's key bindings, built from Settings.Keys so every action is
+// rebindable. It also satisfies help.KeyMap for the optional full-help listing.
 type keyMap struct {
 	Up      key.Binding
 	Down    key.Binding
+	Top     key.Binding
+	Bottom  key.Binding
 	Start   key.Binding
 	Follow  key.Binding
 	All     key.Binding
 	Retry   key.Binding
 	Restart key.Binding
 	Pager   key.Binding
-	Top     key.Binding
-	Bottom  key.Binding
 	Quit    key.Binding
+
+	FocusNext key.Binding
+	FocusPrev key.Binding
+
+	FilterNext key.Binding
+	FilterPrev key.Binding
+	Toggle     key.Binding
+
+	Expand   key.Binding
+	Collapse key.Binding
+
+	Help key.Binding
 }
 
-func defaultKeys() keyMap {
+// keysFrom builds the key bindings from the resolved settings. An action the
+// user leaves unset falls back to the built-in default, so a partial [keys]
+// table never disables a binding.
+func keysFrom(set settings.Settings) keyMap {
+	def := settings.Defaults().Keys
+	keysOf := func(action string) []string {
+		if k := set.Keys[action]; len(k) > 0 {
+			return k
+		}
+		return def[action]
+	}
+	bind := func(action, helpKey, helpDesc string) key.Binding {
+		return key.NewBinding(key.WithKeys(keysOf(action)...), key.WithHelp(helpKey, helpDesc))
+	}
 	return keyMap{
-		Up:      key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
-		Down:    key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
-		Start:   key.NewBinding(key.WithKeys("enter", "s"), key.WithHelp("⏎", "start")),
-		Follow:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("⏎", "follow")),
-		All:     key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "all logs")),
-		Retry:   key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "retry failed")),
-		Restart: key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "re-run all")),
-		Pager:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "pager")),
-		Top:     key.NewBinding(key.WithKeys("g", "home"), key.WithHelp("g", "top")),
-		Bottom:  key.NewBinding(key.WithKeys("G", "end"), key.WithHelp("G", "bottom")),
-		Quit:    key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		Up:         bind("up", "↑/k", "up"),
+		Down:       bind("down", "↓/j", "down"),
+		Top:        bind("top", "g", "top"),
+		Bottom:     bind("bottom", "G", "bottom"),
+		Start:      bind("start", "⏎", "start"),
+		Follow:     bind("follow", "⏎", "follow"),
+		All:        bind("all-logs", "a", "all logs"),
+		Retry:      bind("retry", "r", "retry"),
+		Restart:    bind("restart", "R", "re-run all"),
+		Pager:      bind("pager", "l", "pager"),
+		Quit:       bind("quit", "q", "quit"),
+		FocusNext:  bind("focus-next", "tab", "next pane"),
+		FocusPrev:  bind("focus-prev", "⇧tab", "prev pane"),
+		FilterNext: bind("filter-next", "→", "filter →"),
+		FilterPrev: bind("filter-prev", "←", "filter ←"),
+		Toggle:     bind("toggle", "space", "toggle"),
+		Expand:     bind("expand", "→", "expand"),
+		Collapse:   bind("collapse", "←", "collapse"),
+		Help:       key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	}
 }
 
-// ShortHelp is the single-line help shown in the footer.
+// ShortHelp / FullHelp satisfy help.KeyMap.
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Follow, k.All, k.Retry, k.Restart, k.Pager, k.Quit}
+	return []key.Binding{k.FocusNext, k.Up, k.Down, k.Follow, k.All, k.Retry, k.Pager, k.Quit}
 }
 
-// FullHelp is the expanded help (unused by default, provided for completeness).
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.Follow, k.All},
-		{k.Retry, k.Restart, k.Pager, k.Top, k.Bottom, k.Quit},
+		{k.Up, k.Down, k.Top, k.Bottom, k.FocusNext, k.FocusPrev},
+		{k.Start, k.Follow, k.All, k.Retry, k.Restart, k.Pager},
+		{k.FilterPrev, k.FilterNext, k.Toggle, k.Expand, k.Collapse, k.Quit},
 	}
 }
