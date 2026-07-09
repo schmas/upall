@@ -1,11 +1,12 @@
 // Package tui renders a run as an alt-screen master/detail dashboard over the
 // config-driven engine. It bakes in the red-team safety fixes: a run-state
-// machine (safe retry, no races), quit cancellation, bounded ring-buffer
+// machine (safe retry, no races), quit cancellation, bounded virtual-terminal
 // viewports, a robust pager, and message-only state mutation.
 package tui
 
 import (
 	"context"
+	"io"
 	"sync"
 	"time"
 
@@ -13,16 +14,19 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/vt"
 
 	"github.com/schmas/upall/internal/engine"
 )
 
 const (
-	ringCap       = 1500 // lines kept per step in the viewport (full log on disk)
-	masterWidth   = 30   // master pane width in wide layout
-	wideThreshold = 90   // cols at/above which panes sit side by side
-	headerHeight  = 3    // rendered rows of the bordered title/header
-	previewTop    = 4    // header rows + one blank line before the preview list
+	scrollbackCap = 1500 // scrollback lines kept per step in the pane (full log on disk)
+	defaultCols   = 80   // emulator size before the first WindowSizeMsg resizes it
+	defaultRows   = 24
+	masterWidth   = 30 // master pane width in wide layout
+	wideThreshold = 90 // cols at/above which panes sit side by side
+	headerHeight  = 3  // rendered rows of the bordered title/header
+	previewTop    = 4  // header rows + one blank line before the preview list
 )
 
 // runControl holds everything needed to drive and cancel a run. The model holds
@@ -44,7 +48,7 @@ type Model struct {
 	steps  []engine.Step
 	runDir string
 
-	rings  []*ring
+	terms  []*vt.Emulator
 	states []engine.State
 	durs   []engine.Result
 	starts []time.Time
@@ -78,7 +82,7 @@ func New(steps []engine.Step, runDir string, rc *runControl) *Model {
 		rc:        rc,
 		steps:     steps,
 		runDir:    runDir,
-		rings:     make([]*ring, n),
+		terms:     make([]*vt.Emulator, n),
 		states:    make([]engine.State, n),
 		durs:      make([]engine.Result, n),
 		starts:    make([]time.Time, n),
@@ -89,8 +93,19 @@ func New(steps []engine.Step, runDir string, rc *runControl) *Model {
 		follow:    true,
 		activeIdx: -1,
 	}
-	for i := range m.rings {
-		m.rings[i] = newRing(ringCap)
+	// One virtual-terminal emulator per step, fed raw pty bytes on the update
+	// goroutine. Each gets a drain goroutine that discards the emulator's reply
+	// stream (device-attribute / cursor-position answers): those replies are
+	// written synchronously into an unbuffered pipe during Write, so without a
+	// reader a step that queries the terminal would deadlock the update loop.
+	// The child's stdin is /dev/null, so the replies are never needed. Emulators
+	// are reset in place (never closed/recreated), so these goroutines live for
+	// the program and the emulator's closed flag is never written — no race.
+	for i := range m.terms {
+		e := vt.NewEmulator(defaultCols, defaultRows)
+		e.SetScrollbackSize(scrollbackCap)
+		m.terms[i] = e
+		go func(e *vt.Emulator) { _, _ = io.Copy(io.Discard, e) }(e)
 	}
 	return m
 }

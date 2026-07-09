@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -26,15 +25,16 @@ const (
 	drainGrace = 2 * time.Second
 )
 
-// runCmd runs one command through a pty, streaming output to teeW (raw) and the
-// sink (line-split). parent is the run context (quit); sctx additionally carries
-// the per-step timeout. It returns the exit code and how the command finished.
+// runCmd runs one command through a pty, streaming the raw output to both teeW
+// (the logfile) and the sink, unmodified. parent is the run context (quit); sctx
+// additionally carries the per-step timeout. It returns the exit code and how the
+// command finished.
 func (r *Runner) runCmd(parent, sctx context.Context, shell, cmdline string, env []string, i int, teeW io.Writer) (int, outcome) {
 	c := exec.Command(shell, "-c", cmdline)
 	c.Env = env
 	ptmx, err := startPTY(c, r.currentSize())
 	if err != nil {
-		r.sink.Line(i, []byte("upall: cannot start command: "+err.Error()))
+		r.sink.Output(i, []byte("upall: cannot start command: "+err.Error()+"\n"))
 		return 127, outcomeDone
 	}
 	r.setActive(ptmx)
@@ -52,9 +52,8 @@ func (r *Runner) runCmd(parent, sctx context.Context, shell, cmdline string, env
 
 	copyDone := make(chan struct{})
 	go func() {
-		lw := &lineWriter{i: i, sink: r.sink}
-		_, _ = io.Copy(io.MultiWriter(teeW, lw), reader)
-		lw.flush()
+		sw := &sinkWriter{i: i, sink: r.sink}
+		_, _ = io.Copy(io.MultiWriter(teeW, sw), reader)
 		close(copyDone)
 	}()
 
@@ -126,38 +125,17 @@ func exitCode(err error) int {
 	return 1
 }
 
-// lineWriter splits a raw byte stream into logical lines and forwards each
-// (without the trailing newline) to the sink. Carriage returns are preserved so
-// the consumer can decide how to render progress; the raw stream still reaches
-// the logfile untouched via the MultiWriter.
-type lineWriter struct {
+// sinkWriter adapts an io.Writer onto Sink.Output, forwarding each raw pty read
+// to the sink verbatim. The sink owns any line-splitting or sanitizing; the raw
+// bytes also reach the logfile untouched via the MultiWriter this sits behind.
+// io.Copy reuses its buffer between writes, so a sink that retains p must copy it
+// (documented on Sink.Output).
+type sinkWriter struct {
 	i    int
 	sink Sink
-	buf  []byte
 }
 
-func (w *lineWriter) Write(p []byte) (int, error) {
-	w.buf = append(w.buf, p...)
-	for {
-		idx := bytes.IndexByte(w.buf, '\n')
-		if idx < 0 {
-			break
-		}
-		w.emit(w.buf[:idx])
-		w.buf = w.buf[idx+1:]
-	}
+func (w *sinkWriter) Write(p []byte) (int, error) {
+	w.sink.Output(w.i, p)
 	return len(p), nil
-}
-
-func (w *lineWriter) flush() {
-	if len(w.buf) > 0 {
-		w.emit(w.buf)
-		w.buf = w.buf[:0]
-	}
-}
-
-func (w *lineWriter) emit(line []byte) {
-	cp := make([]byte, len(line))
-	copy(cp, line)
-	w.sink.Line(w.i, cp)
 }

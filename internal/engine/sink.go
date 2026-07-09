@@ -12,9 +12,12 @@ type Sink interface {
 	Skip(i int, reason string)
 	// StepStart reports that a step has begun executing.
 	StepStart(i int)
-	// Line reports one logical line of output (no trailing newline) for a step.
-	// The byte slice is owned by the callee; copy it if retained.
-	Line(i int, b []byte)
+	// Output reports a raw chunk of a step's output exactly as read from the pty.
+	// A chunk may contain carriage returns, escape sequences, and partial or
+	// multiple lines; line boundaries are not aligned to chunk boundaries. The
+	// slice is only valid for the duration of the call (io.Copy reuses its
+	// buffer), so an implementation that retains bytes must copy them.
+	Output(i int, p []byte)
 	// StepDone reports the final outcome of a step.
 	StepDone(i int, res Result)
 }

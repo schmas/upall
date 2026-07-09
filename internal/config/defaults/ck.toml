@@ -1,8 +1,8 @@
 schema = 1
 
 # ClaudeKit refresh. UPALL_ACTIVE=1 tells ck-update it is nested (it streams
-# plain into our pane instead of drawing its own dashboard); NO_COLOR=1 keeps
-# its banners from rendering a colored nested UI inside the ck pane.
+# plain into our pane instead of drawing its own dashboard). Its colored banners
+# are rendered faithfully by the VT emulator, so no NO_COLOR override is needed.
 [[step]]
 key     = "ck"
 label   = "ClaudeKit"
@@ -13,4 +13,3 @@ timeout = "20m"
 
 [step.env]
 UPALL_ACTIVE = "1"
-NO_COLOR     = "1"
