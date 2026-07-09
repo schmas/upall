@@ -15,11 +15,12 @@ type styles struct {
 	success lipgloss.Color
 	failure lipgloss.Color
 
-	selected lipgloss.Style // the highlighted row in the focused list
-	muted    lipgloss.Style // dimmed / secondary text
-	sep      lipgloss.Style // separators (── label ──)
-	header   lipgloss.Style // header title text
-	excluded lipgloss.Style // pre-run excluded step (dim + strikethrough)
+	selected         lipgloss.Style // the highlighted row in the focused list
+	muted            lipgloss.Style // dimmed / secondary text
+	sep              lipgloss.Style // separators (── label ──)
+	header           lipgloss.Style // header title text
+	excluded         lipgloss.Style // pre-run excluded step (dim + strikethrough)
+	selectedExcluded lipgloss.Style // cursor on an excluded step (dark green + strikethrough)
 }
 
 // buildStyles turns a Theme into ready-to-use lipgloss styles.
@@ -36,5 +37,9 @@ func buildStyles(t settings.Theme) styles {
 		sep:      lipgloss.NewStyle().Foreground(dim),
 		header:   lipgloss.NewStyle().Bold(true),
 		excluded: lipgloss.NewStyle().Foreground(dim).Strikethrough(true),
+		// Cursor on an excluded step: keep the accent (so it still reads as the
+		// selected row) but faint it to a darker green and strike it through, so
+		// the exclusion is visible without having to move the cursor off it.
+		selectedExcluded: lipgloss.NewStyle().Foreground(accent).Faint(true).Strikethrough(true),
 	}
 }

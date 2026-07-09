@@ -105,6 +105,27 @@ func TestPreRunToggleExcludesStep(t *testing.T) {
 	}
 }
 
+// TestSelectedExcludedStyleDistinct proves the cursor-on-excluded style strikes
+// through (so the exclusion is visible while the step is selected) and faints to
+// a darker accent, while the plain selected style does not strike through. This
+// is the fix for an excluded step reading as still-included until the cursor
+// moved off it.
+func TestSelectedExcludedStyleDistinct(t *testing.T) {
+	st := testStyles()
+	if !st.selectedExcluded.GetStrikethrough() {
+		t.Error("selectedExcluded must strike through so exclusion shows under the cursor")
+	}
+	if !st.selectedExcluded.GetFaint() {
+		t.Error("selectedExcluded should be faint (dark green) to read as excluded")
+	}
+	if st.selected.GetStrikethrough() {
+		t.Error("plain selected must not strike through")
+	}
+	if got, want := st.selectedExcluded.GetForeground(), st.accent; got != want {
+		t.Errorf("selectedExcluded foreground = %v, want accent %v", got, want)
+	}
+}
+
 // TestToggleBlockedAfterStart proves inclusion is a pre-run choice: Space is a
 // no-op once the run has started.
 func TestToggleBlockedAfterStart(t *testing.T) {

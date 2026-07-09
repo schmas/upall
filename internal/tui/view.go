@@ -213,7 +213,7 @@ func (m *Model) renderFooterBar() string {
 		if m.started {
 			hint = "↑/↓ move · ⏎ follow · a all · r retry · R re-run · l pager · tab pane · q quit"
 		} else {
-			hint = "⏎ start · ↑/↓ move · tab pane · q quit"
+			hint = "⏎ start · ↑/↓ move · space toggle · tab pane · q quit"
 		}
 	}
 	if m.showHelp {
@@ -252,10 +252,14 @@ func (m *Model) stepRow(i int) string {
 	}
 	label := ansi.Truncate(m.steps[i].Label, labelW, "…")
 	row := fmt.Sprintf("%s %-*s %s", glyph, labelW, label, elapsed)
+	selected := m.isLiveStep() && m.out.step == i
+	excluded := i < len(m.included) && !m.included[i]
 	switch {
-	case m.isLiveStep() && m.out.step == i:
+	case selected && excluded:
+		return m.st.selectedExcluded.Render(row) // cursor on excluded: dark green + strikethrough
+	case selected:
 		return m.st.selected.Render(row)
-	case i < len(m.included) && !m.included[i]:
+	case excluded:
 		return m.st.excluded.Render(row) // pre-run excluded: dim + strikethrough
 	default:
 		return row

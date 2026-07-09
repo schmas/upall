@@ -193,6 +193,21 @@ func TestDashboardRendersOnLaunchAndStartsOnConfirm(t *testing.T) {
 	}
 }
 
+// TestPreRunFooterShowsToggleHint proves the idle Steps footer advertises the
+// space toggle so pre-run include/exclude is discoverable, and that the hint
+// drops once a run starts (toggle is a no-op after start).
+func TestPreRunFooterShowsToggleHint(t *testing.T) {
+	m, _, _ := testModel(demoSteps())
+	sizeUp(m)
+	if foot := ansi.Strip(m.renderFooterBar()); !strings.Contains(foot, "space toggle") {
+		t.Errorf("pre-run footer should show the space toggle hint, got %q", foot)
+	}
+	startRunning(m)
+	if foot := ansi.Strip(m.renderFooterBar()); strings.Contains(foot, "space toggle") {
+		t.Errorf("started footer should drop the toggle hint, got %q", foot)
+	}
+}
+
 // TestTabCyclesFocus proves Tab advances Steps→Output→History→Steps, Shift+Tab
 // reverses, and the footer text tracks the focused pane.
 func TestTabCyclesFocus(t *testing.T) {
