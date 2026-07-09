@@ -101,3 +101,5 @@ order, timeout`. Set `enabled = false` to disable an embedded default.
 - `internal/plain` — plain streaming sink + shared summary.
 - `internal/tui` — Bubble Tea master/detail dashboard.
 - `internal/platform`, `internal/notify` — host detection, failure notification.
+
+For architecture, code standards, testing strategy, and roadmap, see [`.ck-docs/`](.ck-docs/).
