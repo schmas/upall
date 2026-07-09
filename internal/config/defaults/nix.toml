@@ -1,0 +1,12 @@
+schema = 1
+
+# Nix config rebuild. Applies only when a nix-config checkout is present, so it
+# stays inert on hosts that do not use nix (detect via directory existence,
+# ported verbatim from v2's compound guard).
+[[step]]
+key     = "nix"
+label   = "Nix Config"
+detect  = '[ -d "$HOME/.config/nix-config" ]'
+run     = ["nix-config-update"]
+order   = 15
+timeout = "30m"

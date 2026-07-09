@@ -1,0 +1,10 @@
+schema = 1
+
+# uv-managed Python tools.
+[[step]]
+key     = "uv"
+label   = "uv Tools"
+detect  = "command -v uv"
+run     = ["uv tool upgrade --all"]
+order   = 60
+timeout = "15m"

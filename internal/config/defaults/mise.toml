@@ -1,0 +1,10 @@
+schema = 1
+
+# mise-managed runtimes and tools.
+[[step]]
+key     = "mise"
+label   = "Mise"
+detect  = "command -v mise"
+run     = ["mise up"]
+order   = 40
+timeout = "20m"

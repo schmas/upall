@@ -1,0 +1,10 @@
+schema = 1
+
+# Pull and apply the latest dotfiles.
+[[step]]
+key     = "chezmoi"
+label   = "Chezmoi"
+detect  = "command -v chezmoi"
+run     = ["chezmoi update"]
+order   = 20
+timeout = "10m"

@@ -1,0 +1,10 @@
+schema = 1
+
+# Atuin shell history: dedup, then sync. Both run even if one fails.
+[[step]]
+key     = "atuin"
+label   = "Atuin"
+detect  = "command -v atuin"
+run     = ["atuin history dedup --before now --dupkeep 1", "atuin sync"]
+order   = 100
+timeout = "15m"

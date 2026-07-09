@@ -1,0 +1,13 @@
+schema = 1
+
+# Fisher (fish plugin manager). Detect is a compound guard ported verbatim from
+# v2 — fisher is a fish function, not a PATH binary, so `command -v fish` alone
+# is not enough. Commands run under fish, not the default shell.
+[[step]]
+key     = "fisher"
+label   = "Fisher"
+detect  = 'command -v fish && fish -c "functions -q fisher"'
+shell   = "fish"
+run     = ["fisher update"]
+order   = 90
+timeout = "10m"

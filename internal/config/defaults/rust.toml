@@ -1,0 +1,11 @@
+schema = 1
+
+# Rust toolchain + cargo-installed binaries. `cargo install-update` needs the
+# cargo-update crate; the step fails if any command fails.
+[[step]]
+key     = "rust"
+label   = "Rust & Cargo"
+detect  = "command -v rustup"
+run     = ["rustup self update", "rustup update", "cargo install-update -a"]
+order   = 50
+timeout = "60m"

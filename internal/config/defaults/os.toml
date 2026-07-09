@@ -1,0 +1,13 @@
+schema = 1
+
+# OS package updates (apt/dnf/pacman/mas/...). Wrapped by the `osupdate` script.
+# The only sudo step: sudo is primed before the run and kept alive for the
+# session so the pty child (stdin=/dev/null) never has to prompt.
+[[step]]
+key     = "os"
+label   = "OS Update"
+detect  = "command -v osupdate"
+run     = ["osupdate"]
+sudo    = true
+order   = 10
+timeout = "60m"

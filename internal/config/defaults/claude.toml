@@ -1,0 +1,11 @@
+schema = 1
+
+# Claude Code CLI. Detect matches either a PATH binary or the standalone
+# ~/.local/bin install; the run mirrors that fallback (v2's step_claude).
+[[step]]
+key     = "claude"
+label   = "Claude CLI"
+detect  = 'command -v claude || [ -x "$HOME/.local/bin/claude" ]'
+run     = ['if command -v claude >/dev/null 2>&1; then claude update; else "$HOME/.local/bin/claude" update; fi']
+order   = 70
+timeout = "10m"
