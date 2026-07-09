@@ -27,7 +27,6 @@ type Sink struct {
 	color  bool
 	runDir string
 	width  int
-	Failed int
 }
 
 // New builds a plain sink over steps, writing to out. color enables ANSI
@@ -110,7 +109,6 @@ func (s *Sink) StepDone(i int, res engine.Result) {
 	case engine.StateAborted:
 		fmt.Fprintf(s.out, " %s %s%s%s %s(%s, aborted)%s\n", engine.Glyph(engine.StateAborted),
 			s.c(red), label, s.c(reset), s.c(dim), engine.Hms(res.Dur), s.c(reset))
-		s.Failed++
 	default: // failed
 		detail := fmt.Sprintf("exit %d", res.RC)
 		if res.Reason != "" {
@@ -118,6 +116,5 @@ func (s *Sink) StepDone(i int, res engine.Result) {
 		}
 		fmt.Fprintf(s.out, " %s %s%s%s %s(%s, %s)%s\n", engine.Glyph(engine.StateFailed),
 			s.c(red), label, s.c(reset), s.c(dim), engine.Hms(res.Dur), detail, s.c(reset))
-		s.Failed++
 	}
 }

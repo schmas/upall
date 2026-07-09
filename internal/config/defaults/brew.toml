@@ -3,9 +3,9 @@ schema = 1
 # Homebrew: refresh formulae, upgrade, prune. All three run even if one fails
 # (the step fails if any command fails), mirroring v2.
 [[step]]
-key     = "brew"
-label   = "Homebrew"
-detect  = "command -v brew"
-run     = ["brew update", "brew upgrade", "brew cleanup"]
-order   = 30
+key = "brew"
+label = "Homebrew"
+detect = "command -v brew"
+run = ["brew update", "brew upgrade -y", "brew cleanup"]
+order = 30
 timeout = "60m"

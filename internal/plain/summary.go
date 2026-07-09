@@ -2,6 +2,7 @@ package plain
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/schmas/upall/internal/engine"
@@ -17,39 +18,56 @@ const (
 	reset = "\033[0m"
 )
 
-// End prints the closing summary, a failure hint + notification if anything
-// failed, and returns the failed-step count (the process exit code).
-func (s *Sink) End(title string) int {
-	passed, failed, skipped := s.tally()
-	total := len(s.steps)
+const summaryWidth = 72
 
-	fmt.Fprintln(s.out)
-	bar := strings.Repeat("━", s.width)
-	fmt.Fprintf(s.out, "%s%s%s\n", s.c(bold), bar, s.c(reset))
-	fmt.Fprintf(s.out, "%s  %s Summary%s  (%d passed, %d failed, %d skipped, %d total)\n",
-		s.c(bold), title, s.c(reset), passed, failed, skipped, total)
-	for i, st := range s.steps {
-		fmt.Fprintf(s.out, "  %2d. %-22s %s %s%s%s\n",
-			i+1, st.Label, s.stateLabel(s.states[i]),
-			s.c(dim), engine.Hms(s.durs[i].Dur), s.c(reset))
+// End prints the run summary and returns the failed-step count (exit code).
+func (s *Sink) End(title string) int {
+	return RenderSummary(s.out, title, s.steps, s.states, s.durs, s.runDir, s.color)
+}
+
+// RenderSummary writes the closing summary (counts, per-step results, log dir)
+// and, on failure, a hint plus a desktop notification. It is shared by the plain
+// sink's End and the TUI's on-quit normal-buffer flush so both look identical.
+// Returns the number of failed/aborted steps.
+func RenderSummary(out io.Writer, title string, steps []engine.Step, states []engine.State, durs []engine.Result, runDir string, color bool) int {
+	c := colorer(color)
+	passed, failed, skipped := tally(states)
+
+	fmt.Fprintln(out)
+	bar := strings.Repeat("━", summaryWidth)
+	fmt.Fprintf(out, "%s%s%s\n", c(bold), bar, c(reset))
+	fmt.Fprintf(out, "%s  %s Summary%s  (%d passed, %d failed, %d skipped, %d total)\n",
+		c(bold), title, c(reset), passed, failed, skipped, len(steps))
+	for i, st := range steps {
+		fmt.Fprintf(out, "  %2d. %-22s %s %s%s%s\n",
+			i+1, st.Label, stateLabel(states[i], color), c(dim), engine.Hms(durs[i].Dur), c(reset))
 	}
-	if s.runDir != "" {
-		fmt.Fprintf(s.out, "%slogs: %s%s\n", s.c(dim), s.runDir, s.c(reset))
+	if runDir != "" {
+		fmt.Fprintf(out, "%slogs: %s%s\n", c(dim), runDir, c(reset))
 	}
-	fmt.Fprintf(s.out, "%s%s%s\n", s.c(bold), bar, s.c(reset))
+	fmt.Fprintf(out, "%s%s%s\n", c(bold), bar, c(reset))
 
 	if failed > 0 {
-		fmt.Fprintf(s.out, "%s⚠️  %d step(s) failed.%s\n", s.c(red), failed, s.c(reset))
-		s.reviewFailures()
+		fmt.Fprintf(out, "%s⚠️  %d step(s) failed.%s\n", c(red), failed, c(reset))
+		reviewFailures(out, steps, states, runDir, color)
 		notify.Failure(title, fmt.Sprintf("%d step(s) failed", failed))
 	} else {
-		fmt.Fprintf(s.out, "%s✅ All updates completed successfully!%s\n", s.c(green), s.c(reset))
+		fmt.Fprintf(out, "%s✅ All updates completed successfully!%s\n", c(green), c(reset))
 	}
 	return failed
 }
 
-func (s *Sink) tally() (passed, failed, skipped int) {
-	for _, st := range s.states {
+func colorer(color bool) func(string) string {
+	return func(code string) string {
+		if color {
+			return code
+		}
+		return ""
+	}
+}
+
+func tally(states []engine.State) (passed, failed, skipped int) {
+	for _, st := range states {
 		switch st {
 		case engine.StateOK:
 			passed++
@@ -62,30 +80,32 @@ func (s *Sink) tally() (passed, failed, skipped int) {
 	return passed, failed, skipped
 }
 
-func (s *Sink) stateLabel(st engine.State) string {
+func stateLabel(st engine.State, color bool) string {
+	c := colorer(color)
 	switch st {
 	case engine.StateOK:
-		return "✅ " + s.c(green) + "success" + s.c(reset)
+		return "✅ " + c(green) + "success" + c(reset)
 	case engine.StateFailed:
-		return "❌ " + s.c(red) + "failed" + s.c(reset)
+		return "❌ " + c(red) + "failed" + c(reset)
 	case engine.StateAborted:
-		return "⊗ " + s.c(red) + "aborted" + s.c(reset)
+		return "⊗ " + c(red) + "aborted" + c(reset)
 	case engine.StateSkipped:
-		return "⊘ " + s.c(dim) + "skipped" + s.c(reset)
+		return "⊘ " + c(dim) + "skipped" + c(reset)
 	default:
-		return "· " + s.c(dim) + "pending" + s.c(reset)
+		return "· " + c(dim) + "pending" + c(reset)
 	}
 }
 
-// reviewFailures lists each failed step's logfile for later paging.
-func (s *Sink) reviewFailures() {
-	if s.runDir == "" {
+// reviewFailures lists each failed/aborted step's logfile for later paging.
+func reviewFailures(out io.Writer, steps []engine.Step, states []engine.State, runDir string, color bool) {
+	if runDir == "" {
 		return
 	}
-	for i, st := range s.steps {
-		if s.states[i] == engine.StateFailed || s.states[i] == engine.StateAborted {
-			log := engine.LogPath(s.runDir, i+1, st.Key)
-			fmt.Fprintf(s.out, "   %s%s%s  %s\n", s.c(dim), st.Label, s.c(reset), log)
+	c := colorer(color)
+	for i, st := range steps {
+		if states[i] == engine.StateFailed || states[i] == engine.StateAborted {
+			log := engine.LogPath(runDir, i+1, st.Key)
+			fmt.Fprintf(out, "   %s%s%s  %s\n", c(dim), st.Label, c(reset), log)
 		}
 	}
 }

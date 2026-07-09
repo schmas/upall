@@ -21,6 +21,7 @@ import (
 	"github.com/schmas/upall/internal/engine"
 	"github.com/schmas/upall/internal/plain"
 	"github.com/schmas/upall/internal/platform"
+	"github.com/schmas/upall/internal/tui"
 )
 
 // version is set at build time via -ldflags "-X main.version=...".
@@ -65,26 +66,39 @@ func main() {
 	os.Exit(run(steps, o.plain))
 }
 
-// run executes steps with the plain sink and returns the process exit code
-// (the number of failed steps). Ctrl-C / SIGTERM cancels the run and its child.
+// run executes steps and returns the process exit code (the number of failed
+// steps). It renders the TUI on an interactive terminal, or plain streaming for
+// --plain / NO_COLOR / a non-TTY stdout.
 func run(steps []engine.Step, plainFlag bool) int {
 	stdoutTTY := term.IsTerminal(int(os.Stdout.Fd()))
 	stdinTTY := term.IsTerminal(int(os.Stdin.Fd()))
-	color := stdoutTTY && os.Getenv("NO_COLOR") == "" && !plainFlag
+	useTUI := stdoutTTY && !plainFlag && os.Getenv("NO_COLOR") == ""
 
 	runDir, _ := engine.NewRunDir(keepFromEnv())
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
+	// The sudo keepalive spans the whole session (both modes), so a retried or
+	// late sudo step never has to prompt inside the pty (stdin=/dev/null).
+	saCtx, saCancel := context.WithCancel(context.Background())
+	defer saCancel()
 	if needsSudo(steps) && stdinTTY {
 		if err := primeSudo(); err != nil {
 			fail(fmt.Errorf("sudo is required for a selected step: %w", err))
 		}
-		startSudoKeepalive(ctx)
+		startSudoKeepalive(saCtx)
 	}
 
-	sink := plain.New(steps, os.Stdout, color, runDir)
+	if useTUI {
+		failed, err := tui.Run(steps, runDir)
+		if err != nil {
+			fail(err)
+		}
+		return failed
+	}
+
+	// Plain mode: Ctrl-C / SIGTERM cancels the run and its child.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	sink := plain.New(steps, os.Stdout, false, runDir)
 	sink.Begin("upall")
 	engine.NewRunner(runDir, sink).RunAll(ctx, steps)
 	return sink.End("upall")
