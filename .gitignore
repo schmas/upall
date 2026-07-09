@@ -1,0 +1,4 @@
+/dist/
+/upall
+*.log
+.DS_Store
