@@ -64,9 +64,11 @@ func (r *Runner) RunAll(ctx context.Context, steps []Step) {
 	}
 }
 
-// RunOne runs a single step by index (used by the TUI retry).
+// RunOne runs a single step by index (used by the TUI retry). It no-ops if the
+// run context is already cancelled, so a retry launched during a quit race does
+// not fork a child on a dead context.
 func (r *Runner) RunOne(ctx context.Context, steps []Step, i int) {
-	if i < 0 || i >= len(steps) {
+	if i < 0 || i >= len(steps) || ctx.Err() != nil {
 		return
 	}
 	r.runStep(ctx, steps, i)
@@ -89,7 +91,8 @@ func (r *Runner) runStep(ctx context.Context, steps []Step, i int) {
 
 	teeW := io.Writer(io.Discard)
 	if r.RunDir != "" {
-		if f, err := os.Create(LogPath(r.RunDir, i+1, st.Key)); err == nil {
+		// 0600: logs may contain sensitive tool output; keep them user-only.
+		if f, err := os.OpenFile(LogPath(r.RunDir, i+1, st.Key), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600); err == nil {
 			defer f.Close()
 			teeW = f
 		}

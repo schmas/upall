@@ -192,6 +192,28 @@ func TestSkippedStepReported(t *testing.T) {
 	}
 }
 
+// TestBackgroundSlaveHolderDoesNotHang is the C1 regression: the shell exits
+// immediately but `sleep 3 &` inherits the pty slave and holds it open, so the
+// master never gets EOF. Closing the master cannot unblock the read on darwin,
+// so the runner must cancel the drain (cancelreader) and finish promptly.
+func TestBackgroundSlaveHolderDoesNotHang(t *testing.T) {
+	sink := newRecSink()
+	steps := []Step{{Key: "bg", Shell: "bash", Run: []string{"echo started; sleep 3 &"}}}
+	start := time.Now()
+	NewRunner("", sink).RunAll(context.Background(), steps)
+	elapsed := time.Since(start)
+
+	if elapsed > 5*time.Second {
+		t.Fatalf("runner hung on a backgrounded slave-holder: %v", elapsed)
+	}
+	if res := sink.done[0]; res.State != StateOK {
+		t.Fatalf("done = %+v, want OK", res)
+	}
+	if joined := strings.Join(sink.linesOf(0), " "); !strings.Contains(joined, "started") {
+		t.Errorf("expected 'started' output, got %q", joined)
+	}
+}
+
 func TestTeesToLogfile(t *testing.T) {
 	dir := t.TempDir()
 	sink := newRecSink()

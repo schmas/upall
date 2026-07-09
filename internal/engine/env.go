@@ -57,6 +57,26 @@ func buildEnv(stepEnv map[string]string) []string {
 	return out
 }
 
+// NonInteractiveEnviron returns os.Environ() plus the non-interactive vars. It
+// is for probes such as config `detect` snippets, which run the same class of
+// compound shell guards as steps and must likewise never block on a prompt.
+func NonInteractiveEnviron() []string {
+	m := map[string]string{}
+	for _, kv := range os.Environ() {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			m[k] = v
+		}
+	}
+	for k, v := range nonInteractiveEnv {
+		m[k] = v
+	}
+	out := make([]string, 0, len(m))
+	for k, v := range m {
+		out = append(out, k+"="+v)
+	}
+	return out
+}
+
 // defaultShell picks bash when available (v2 ran steps as bash), else sh.
 func defaultShell() string {
 	if _, err := exec.LookPath("bash"); err == nil {

@@ -7,6 +7,8 @@ import (
 	"io"
 	"os/exec"
 	"time"
+
+	"github.com/muesli/cancelreader"
 )
 
 // outcome distinguishes how a single command finished so the step can be marked
@@ -19,7 +21,10 @@ const (
 	outcomeAborted
 )
 
-const killGrace = 3 * time.Second
+const (
+	killGrace  = 3 * time.Second
+	drainGrace = 2 * time.Second
+)
 
 // runCmd runs one command through a pty, streaming output to teeW (raw) and the
 // sink (line-split). parent is the run context (quit); sctx additionally carries
@@ -33,26 +38,49 @@ func (r *Runner) runCmd(parent, sctx context.Context, shell, cmdline string, env
 		return 127, outcomeDone
 	}
 	r.setActive(ptmx)
-	defer r.setActive(nil)
+
+	// A pty master read cannot be unblocked by Close() — the fd is not in Go's
+	// runtime poller — so if a step backgrounds a process that keeps the slave
+	// open past the child's exit, a plain drain would block forever. cancelreader
+	// makes the read cancelable; we cancel it after a short grace so the runner
+	// never hangs while still draining buffered output on the common path.
+	var reader io.Reader = ptmx
+	cr, crErr := cancelreader.NewReader(ptmx)
+	if crErr == nil {
+		reader = cr
+	}
 
 	copyDone := make(chan struct{})
 	go func() {
 		lw := &lineWriter{i: i, sink: r.sink}
-		_, _ = io.Copy(io.MultiWriter(teeW, lw), ptmx)
+		_, _ = io.Copy(io.MultiWriter(teeW, lw), reader)
 		lw.flush()
 		close(copyDone)
 	}()
 
 	waitErr, oc := waitCmd(parent, sctx, c)
 
-	// Drain remaining buffered output; force the read closed only if a stray
-	// grandchild keeps the slave open past a short grace.
+	// Let buffered output drain on the common path; if a lingering slave-holder
+	// blocks EOF, cancel the read (safe to call while the read is in flight).
 	select {
 	case <-copyDone:
-	case <-time.After(2 * time.Second):
+	case <-time.After(drainGrace):
+		if crErr == nil {
+			cr.Cancel()
+		}
+	}
+	// Join the copy goroutine BEFORE closing so Close never races the in-flight
+	// read (cancelreader touches the fd from the read goroutine). The extra
+	// timeout is a last-resort backstop for a cancelreader-init failure.
+	select {
+	case <-copyDone:
+	case <-time.After(drainGrace):
+	}
+	r.setActive(nil)
+	if crErr == nil {
+		_ = cr.Close()
 	}
 	_ = ptmx.Close()
-	<-copyDone
 
 	return exitCode(waitErr), oc
 }

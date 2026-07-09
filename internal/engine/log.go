@@ -19,7 +19,8 @@ func NewRunDir(keep int) (string, error) {
 	}
 	root := filepath.Join(cacheHome(), "upall")
 	dir := filepath.Join(root, time.Now().Format("20060102-150405"))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	// 0700: captured tool output may include tokens/paths; keep it user-only.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	link := filepath.Join(root, "latest")

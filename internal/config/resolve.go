@@ -1,15 +1,22 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/schmas/upall/internal/engine"
 	"github.com/schmas/upall/internal/platform"
 )
+
+// detectTimeout bounds a single detect probe so a snippet that sources a slow or
+// blocking shell config (e.g. `fish -c ...`) cannot hang startup.
+const detectTimeout = 5 * time.Second
 
 // Resolve turns merged defs into Resolved steps for a host: it drops
 // enabled=false steps, converts each to a runtime Step, sorts by explicit order
@@ -85,14 +92,23 @@ func platformMatches(s engine.Step, p platform.Platform) bool {
 // detectOK runs the detect snippet through `sh -c` and reports exit 0. Using a
 // shell (not exec.LookPath) is what lets v2's compound guards — pipes, &&, [ ],
 // function probes — port verbatim. Config is local and trusted, so shell-eval
-// is safe here.
+// is safe here. Like step execution it is hardened against hangs: stdin is
+// /dev/null, the environment is non-interactive, and a timeout treats a stuck
+// probe as "not detected" rather than freezing startup.
 func detectOK(snippet string) bool {
 	if strings.TrimSpace(snippet) == "" {
 		return true
 	}
-	cmd := exec.Command("sh", "-c", snippet)
+	ctx, cancel := context.WithTimeout(context.Background(), detectTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sh", "-c", snippet)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
+	cmd.Env = engine.NonInteractiveEnviron()
+	if devnull, err := os.Open(os.DevNull); err == nil {
+		cmd.Stdin = devnull
+		defer devnull.Close()
+	}
 	return cmd.Run() == nil
 }
 
