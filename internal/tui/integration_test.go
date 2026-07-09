@@ -36,7 +36,8 @@ func TestProgramQuitsOnQ(t *testing.T) {
 	m, _ := integrationModel(t)
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(120, 40))
 
-	// Simulate a completed run, then quit.
+	// Confirm the preview to start, simulate a completed run, then quit.
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	tm.Send(startMsg{0})
 	tm.Send(linesMsg{0: {[]byte("output line")}})
 	tm.Send(doneMsg{i: 0, res: engine.Result{State: engine.StateOK}})
@@ -58,6 +59,7 @@ func TestRetryLaunchesThroughLoop(t *testing.T) {
 	m, launched := integrationModel(t)
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(120, 40))
 
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter}) // confirm preview → RunAll launch
 	tm.Send(startMsg{0})
 	tm.Send(doneMsg{i: 0, res: engine.Result{State: engine.StateFailed, RC: 1}})
 	tm.Send(RunDoneMsg{}) // run idle now
@@ -65,8 +67,8 @@ func TestRetryLaunchesThroughLoop(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 
 	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
-	// Init's RunAll launch + the retry RunOne launch = 2.
+	// confirm-start RunAll launch + the retry RunOne launch = 2.
 	if *launched != 2 {
-		t.Fatalf("launch count = %d, want 2 (initial RunAll + retry)", *launched)
+		t.Fatalf("launch count = %d, want 2 (confirm-start + retry)", *launched)
 	}
 }

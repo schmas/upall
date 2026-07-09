@@ -56,6 +56,8 @@ type Model struct {
 	sel        int // 0..n-1 selects a step; n selects the synthetic "All logs"
 	follow     bool
 	running    bool
+	started    bool // false while the preview is shown, before the run is confirmed
+	dirty      bool // All-logs content needs a rebuild (throttled to the tick)
 	activeIdx  int
 	totalStart time.Time
 
@@ -70,20 +72,19 @@ type Model struct {
 func New(steps []engine.Step, runDir string, rc *runControl) *Model {
 	n := len(steps)
 	m := &Model{
-		rc:         rc,
-		steps:      steps,
-		runDir:     runDir,
-		rings:      make([]*ring, n),
-		states:     make([]engine.State, n),
-		durs:       make([]engine.Result, n),
-		starts:     make([]time.Time, n),
-		skips:      make([]string, n),
-		spin:       spinner.New(spinner.WithSpinner(spinner.Dot)),
-		help:       help.New(),
-		keys:       defaultKeys(),
-		follow:     true,
-		activeIdx:  -1,
-		totalStart: time.Now(),
+		rc:        rc,
+		steps:     steps,
+		runDir:    runDir,
+		rings:     make([]*ring, n),
+		states:    make([]engine.State, n),
+		durs:      make([]engine.Result, n),
+		starts:    make([]time.Time, n),
+		skips:     make([]string, n),
+		spin:      spinner.New(spinner.WithSpinner(spinner.Dot)),
+		help:      help.New(),
+		keys:      defaultKeys(),
+		follow:    true,
+		activeIdx: -1,
 	}
 	for i := range m.rings {
 		m.rings[i] = newRing(ringCap)
@@ -91,18 +92,21 @@ func New(steps []engine.Step, runDir string, rc *runControl) *Model {
 	return m
 }
 
-// Init starts the run, the spinner, and the elapsed-time ticker.
+// Init starts the spinner and elapsed ticker. The run does NOT start here: the
+// TUI opens on a preview of the steps that will run and waits for the user to
+// confirm (see Update's preview handling), so nothing executes until then.
 func (m *Model) Init() tea.Cmd {
-	m.running = true
-	return tea.Batch(m.spin.Tick, tickCmd(), m.startRunCmd())
+	return tea.Batch(m.spin.Tick, tickCmd())
 }
 
-// startRunCmd launches the initial RunAll on a background goroutine.
-func (m *Model) startRunCmd() tea.Cmd {
-	return func() tea.Msg {
-		m.rc.launch(func() { m.rc.runner.RunAll(m.rc.ctx, m.rc.steps) })
-		return nil
-	}
+// begin launches the run once the user confirms the preview. launch is called
+// synchronously on the update goroutine so its wg.Add happens-before any later
+// quit reap (no WaitGroup race).
+func (m *Model) begin() {
+	m.started = true
+	m.running = true
+	m.totalStart = time.Now()
+	m.rc.launch(func() { m.rc.runner.RunAll(m.rc.ctx, m.rc.steps) })
 }
 
 func tickCmd() tea.Cmd {

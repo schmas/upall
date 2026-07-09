@@ -34,6 +34,13 @@ func sizeUp(m *Model) {
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 }
 
+// startRunning puts the model past the preview into the running phase, as if
+// the user had confirmed. Tests of running-mode keys need this.
+func startRunning(m *Model) {
+	m.started = true
+	m.running = true
+}
+
 func TestResizeMakesReady(t *testing.T) {
 	m, _, _ := testModel(demoSteps())
 	sizeUp(m)
@@ -51,6 +58,7 @@ func TestResizeMakesReady(t *testing.T) {
 func TestStepLifecycle(t *testing.T) {
 	m, _, _ := testModel(demoSteps())
 	sizeUp(m)
+	startRunning(m)
 
 	m.Update(startMsg{0})
 	if m.states[0] != engine.StateRunning || m.activeIdx != 0 {
@@ -74,31 +82,26 @@ func TestStepLifecycle(t *testing.T) {
 func TestRetryGuard(t *testing.T) {
 	m, launched, _ := testModel(demoSteps())
 	sizeUp(m)
+	startRunning(m)
 	m.states[0] = engine.StateFailed
 	m.sel = 0
 
-	// Blocked while a run is active.
+	// Blocked while a run is active (retry launches synchronously; count stays 0).
 	m.running = true
-	if cmd := m.retry(); cmd != nil {
-		t.Error("retry should be blocked while running")
-	}
+	m.retry()
 	if *launched != 0 {
 		t.Error("no launch expected while running")
 	}
 
 	// Allowed when idle and the step failed.
 	m.running = false
-	cmd := m.retry()
-	if cmd == nil {
-		t.Fatal("retry should be allowed for a failed step when idle")
-	}
+	m.retry()
 	if !m.running {
 		t.Error("retry should set running")
 	}
 	if m.states[0] != engine.StatePending {
 		t.Error("retry should reset the step to pending")
 	}
-	cmd() // invoke the launch command
 	if *launched != 1 {
 		t.Errorf("launch count = %d, want 1", *launched)
 	}
@@ -106,7 +109,8 @@ func TestRetryGuard(t *testing.T) {
 	// Blocked for a non-failed step.
 	m.running = false
 	m.states[0] = engine.StateOK
-	if cmd := m.retry(); cmd != nil {
+	m.retry()
+	if *launched != 1 {
 		t.Error("retry should be blocked for a non-failed step")
 	}
 }
@@ -114,7 +118,7 @@ func TestRetryGuard(t *testing.T) {
 func TestQuitCancelsAndAborts(t *testing.T) {
 	m, _, canceled := testModel(demoSteps())
 	sizeUp(m)
-	m.running = true
+	startRunning(m)
 	m.activeIdx = 1
 	m.states[1] = engine.StateRunning
 
@@ -136,6 +140,7 @@ func TestQuitCancelsAndAborts(t *testing.T) {
 func TestNavigationAndAllLogs(t *testing.T) {
 	m, _, _ := testModel(demoSteps())
 	sizeUp(m)
+	startRunning(m)
 
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
 	if !m.isAllLogs() {
@@ -147,6 +152,34 @@ func TestNavigationAndAllLogs(t *testing.T) {
 	}
 	if m.follow {
 		t.Error("manual navigation should disable follow")
+	}
+}
+
+// TestPreviewDoesNotRunUntilConfirmed verifies the run does not start on launch:
+// the preview is shown, no launch happens, and pressing the start key begins it.
+func TestPreviewDoesNotRunUntilConfirmed(t *testing.T) {
+	m, launched, _ := testModel(demoSteps())
+	sizeUp(m)
+
+	if m.started {
+		t.Fatal("should open in preview, not started")
+	}
+	// A non-start key does nothing in preview.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	if m.started || *launched != 0 {
+		t.Fatal("nothing should run before confirmation")
+	}
+	// The preview View renders and mentions steps.
+	if !strings.Contains(m.View(), "will run") {
+		t.Errorf("preview should show what will run, got:\n%s", m.View())
+	}
+	// Enter confirms → run begins exactly once.
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !m.started || !m.running {
+		t.Fatal("enter should start the run")
+	}
+	if *launched != 1 {
+		t.Fatalf("launch count = %d, want 1 after confirm", *launched)
 	}
 }
 

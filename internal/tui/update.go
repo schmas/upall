@@ -40,7 +40,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.rings[i].append(ln)
 			}
 		}
-		if _, touched := msg[m.sel]; touched || m.isAllLogs() {
+		// A single selected step rebuilds per batch (responsive live follow);
+		// "All logs" concatenates every ring, so it is throttled to the tick.
+		if m.isAllLogs() {
+			m.dirty = true
+		} else if _, touched := msg[m.sel]; touched {
 			m.rebuildContent()
 			if m.follow && m.running {
 				m.vp.GotoBottom()
@@ -70,6 +74,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
+		if m.dirty {
+			m.rebuildContent()
+			if m.follow && m.running {
+				m.vp.GotoBottom()
+			}
+			m.dirty = false
+		}
 		return m, tickCmd()
 
 	case spinner.TickMsg:
@@ -88,6 +99,30 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Preview mode: nothing runs until the user confirms. Only start/quit/nav.
+	if !m.started {
+		switch {
+		case key.Matches(msg, m.keys.Quit):
+			m.quitting = true
+			m.rc.cancel()
+			return m, tea.Quit
+		case key.Matches(msg, m.keys.Start):
+			m.begin()
+			return m, nil
+		case key.Matches(msg, m.keys.Up):
+			if m.sel > 0 {
+				m.sel--
+			}
+			return m, nil
+		case key.Matches(msg, m.keys.Down):
+			if m.sel < m.allLogsIndex() {
+				m.sel++
+			}
+			return m, nil
+		}
+		return m, nil
+	}
+
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		m.quitting = true
@@ -165,10 +200,10 @@ func (m *Model) retry() tea.Cmd {
 	m.durs[i] = engine.Result{}
 	m.running = true
 	m.rebuildContent()
-	return func() tea.Msg {
-		m.rc.launch(func() { m.rc.runner.RunOne(m.rc.ctx, m.rc.steps, i) })
-		return nil
-	}
+	// launch synchronously (on the update goroutine) so wg.Add happens-before
+	// any subsequent quit reap; only the runner itself is a goroutine.
+	m.rc.launch(func() { m.rc.runner.RunOne(m.rc.ctx, m.rc.steps, i) })
+	return nil
 }
 
 func (m *Model) resize(w, h int) {

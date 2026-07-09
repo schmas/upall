@@ -29,8 +29,49 @@ func (m *Model) View() string {
 	if !m.ready {
 		return "starting upall…"
 	}
+	if !m.started {
+		return m.renderPreview()
+	}
 	body := m.renderBody()
 	return lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.help.View(m.keys))
+}
+
+// renderPreview shows which steps will run (per detect) and waits for the user
+// to confirm before anything executes.
+func (m *Model) renderPreview() string {
+	willRun := 0
+	for _, s := range m.steps {
+		if !s.Skip {
+			willRun++
+		}
+	}
+	skipped := len(m.steps) - willRun
+	title := titleStyle.Width(m.width - 2).Render(
+		fmt.Sprintf("upall  •  %d step(s) will run, %d skipped", willRun, skipped))
+
+	rows := make([]string, 0, len(m.steps))
+	for i, st := range m.steps {
+		rows = append(rows, m.previewRow(i, st))
+	}
+	footer := dimStyle.Render("  ⏎ start · ↑/↓ move · q quit")
+	return lipgloss.JoinVertical(lipgloss.Left, title, "", strings.Join(rows, "\n"), "", footer)
+}
+
+func (m *Model) previewRow(i int, st engine.Step) string {
+	glyph, note := "•", "will run"
+	if st.Skip {
+		glyph = engine.Glyph(engine.StateSkipped)
+		note = "skip"
+		if st.SkipReason != "" {
+			note = "skip — " + st.SkipReason
+		}
+	}
+	label := ansi.Truncate(st.Label, 24, "…")
+	row := fmt.Sprintf("  %s  %-24s  %s", glyph, label, note)
+	if i == m.sel {
+		return selectedStyle.Render(row)
+	}
+	return row
 }
 
 func (m *Model) renderBody() string {
