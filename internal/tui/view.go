@@ -212,9 +212,9 @@ func (m *Model) renderFooterBar() string {
 	var hint string
 	switch m.focus {
 	case FocusOutput:
-		hint = "↑/↓ scroll · g/G top/bottom · l pager · tab pane · q quit"
+		hint = "↑/↓ scroll · g/G top/bottom · w wrap · l pager · tab pane · q quit"
 	case FocusHistory:
-		hint = "↑/↓ move · ⏎/→ expand · ← collapse · l pager · tab pane · q quit"
+		hint = "↑/↓ move · ⏎/→ expand · ← collapse · w wrap · l pager · tab pane · q quit"
 	default: // FocusSteps
 		if m.started {
 			hint = "↑/↓ move · ⏎ follow · a all · r retry · R re-run · l pager · c config · tab pane · q quit"
@@ -223,7 +223,7 @@ func (m *Model) renderFooterBar() string {
 		}
 	}
 	if m.showHelp {
-		hint = "tab/⇧tab pane · ↑/↓ move · ⏎ start/follow · a all · r retry · R re-run · l pager · g/G top/bottom · c config · C config dir · q quit · ? help"
+		hint = "tab/⇧tab pane · ↑/↓ move · ⏎ start/follow · a all · r retry · R re-run · w wrap · l pager · g/G top/bottom · c config · C config dir · q quit · ? help"
 	}
 	w := m.width - 2
 	if w < 1 {

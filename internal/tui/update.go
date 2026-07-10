@@ -12,6 +12,11 @@ import (
 	"github.com/schmas/upall/internal/history"
 )
 
+// histSelectDebounce is how long the History cursor must rest on a row before
+// its log loads into the Output pane, so holding ↓/↑ to skim past runs does not
+// decode every intermediate log.
+const histSelectDebounce = 180 * time.Millisecond
+
 // Update is the sole place step state changes. All runner events arrive as
 // messages here, so the runner goroutine never touches shared model state.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -94,6 +99,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tickCmd()
 
+	case histSelectMsg:
+		// Debounced load-on-navigate: act only if the cursor has not moved since
+		// this tick was scheduled and the History pane still has focus.
+		if msg.gen == m.histSelGen && m.focus == FocusHistory {
+			m.selectAtCursor(m.histRows())
+		}
+		return m, nil
+
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)
@@ -121,6 +134,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case key.Matches(msg, m.keys.Help):
 		m.showHelp = !m.showHelp
+		return m, nil
+	case key.Matches(msg, m.keys.Wrap):
+		m.wrap = !m.wrap
+		m.applyWrap()
 		return m, nil
 	case key.Matches(msg, m.keys.FocusNext):
 		m.focus = (m.focus + 1) % 3
@@ -296,10 +313,12 @@ func (m *Model) handleHistoryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Up):
 		if m.histCursor > 0 {
 			m.histCursor--
+			return m, m.scheduleHistSelect()
 		}
 	case key.Matches(msg, m.keys.Down):
 		if m.histCursor < len(rows)-1 {
 			m.histCursor++
+			return m, m.scheduleHistSelect()
 		}
 	case key.Matches(msg, m.keys.Collapse):
 		m.collapseAtCursor(rows)
@@ -311,12 +330,45 @@ func (m *Model) handleHistoryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// scheduleHistSelect bumps the debounce generation and returns a command that
+// fires histSelectMsg after histSelectDebounce. Bumping invalidates any tick
+// already in flight, so only the cursor's final resting row loads its log.
+func (m *Model) scheduleHistSelect() tea.Cmd {
+	m.histSelGen++
+	gen := m.histSelGen
+	return tea.Tick(histSelectDebounce, func(time.Time) tea.Msg {
+		return histSelectMsg{gen: gen}
+	})
+}
+
+// selectAtCursor loads the Output pane from the History row under the cursor
+// without changing expand state. It backs both the debounced load-on-navigate
+// and the immediate Enter/click selection, so every path shares one mapping of
+// row → Output source.
+func (m *Model) selectAtCursor(rows []histRow) {
+	if m.histCursor < 0 || m.histCursor >= len(rows) {
+		return
+	}
+	row := rows[m.histCursor]
+	switch row.kind {
+	case histRowStep:
+		m.out = outSel{kind: outHistStep, run: row.run, step: row.step}
+	default: // histRowHeader, histRowAll → the run's concatenated logs
+		m.out = outSel{kind: outHistAll, run: row.run}
+	}
+	// Stop following the live run so a step start cannot yank the Output away
+	// from the history log the user is reading.
+	m.follow = false
+	m.rebuildContent()
+}
+
 // expandOrSelectAtCursor expands a collapsed run header, or otherwise selects
 // the row's log source into the Output pane.
 func (m *Model) expandOrSelectAtCursor(rows []histRow) {
 	if m.histCursor < 0 || m.histCursor >= len(rows) {
 		return
 	}
+	m.histSelGen++ // this is a deliberate select — drop any pending debounce
 	row := rows[m.histCursor]
 	switch row.kind {
 	case histRowHeader:
@@ -342,6 +394,7 @@ func (m *Model) collapseAtCursor(rows []histRow) {
 	if m.histCursor < 0 || m.histCursor >= len(rows) {
 		return
 	}
+	m.histSelGen++ // deliberate action — drop any pending debounce
 	run := rows[m.histCursor].run
 	if m.histExpanded[run] {
 		m.histExpanded[run] = false
@@ -408,6 +461,7 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.forwardToViewport(msg)
 	case inRect(msg.X, msg.Y, m.histRect):
 		m.focus = FocusHistory
+		m.histSelGen++ // a click is deliberate — drop any pending debounce
 		// Content rows start one line below the box's top border. Clicking a run
 		// header toggles it; clicking a step/all child selects its log into Output.
 		rows := m.histRows()
@@ -554,15 +608,31 @@ func (m *Model) resize(w, h int) {
 	for _, e := range m.terms {
 		e.Resize(m.vp.Width, m.vp.Height)
 	}
-	// The scratch (history) emulator matches the Output width so decoded logs
-	// wrap the same way; when wrap is off it is sized wide so long lines are
-	// clipped by the box rather than wrapped.
-	scratchW := m.vp.Width
-	if !m.wrap {
-		scratchW = noWrapWidth
-	}
-	m.scratch.Resize(scratchW, m.vp.Height)
+	m.resizeScratch()
 	m.rc.runner.SetSize(uint16(m.vp.Height), uint16(m.vp.Width))
+	m.rebuildContent()
+}
+
+// resizeScratch sizes the history scratch emulator: it matches the Output width
+// so decoded logs wrap the same way, or is sized wide when wrap is off so long
+// lines are clipped by the box rather than wrapped.
+func (m *Model) resizeScratch() {
+	w := m.vp.Width
+	if !m.wrap {
+		w = noWrapWidth
+	}
+	m.scratch.Resize(w, m.vp.Height)
+}
+
+// applyWrap re-sizes the scratch emulator for the current wrap setting and
+// re-renders, so toggling wrap re-decodes the shown history log at the new
+// width. It is a no-op visually for live output (those emulators always wrap to
+// the pane), which is why wrap:on/off shows only for history sources.
+func (m *Model) applyWrap() {
+	if !m.ready {
+		return
+	}
+	m.resizeScratch()
 	m.rebuildContent()
 }
 

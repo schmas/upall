@@ -192,6 +192,87 @@ func TestHistoryMouseClickExpandsAndSelects(t *testing.T) {
 	}
 }
 
+// TestHistoryNavigateLoadsDebounced proves ↓/↑ in the History pane schedule a
+// debounced load rather than loading immediately, and that only the tick whose
+// generation matches the cursor's final rest actually loads the log.
+func TestHistoryNavigateLoadsDebounced(t *testing.T) {
+	m, _ := historyModel(t)
+	m.histCursor = 0
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // expand run 0
+	// rows: 0 header0, 1 brew, 2 mise, 3 all-logs, 4 header(run1)
+	m.histCursor = 0
+	m.out = outSel{kind: outLiveStep, step: 0} // start on a live selection
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if cmd == nil {
+		t.Fatal("history ↓ should schedule a debounced load command")
+	}
+	if m.histCursor != 1 {
+		t.Fatalf("cursor = %d, want 1 after ↓", m.histCursor)
+	}
+	// Navigation alone must not load — the log loads only when the tick fires.
+	if m.out.kind != outLiveStep {
+		t.Errorf("navigation alone must not load history yet, out=%+v", m.out)
+	}
+	gen := m.histSelGen
+
+	// A superseded tick is ignored.
+	m.Update(histSelectMsg{gen: gen - 1})
+	if m.out.kind != outLiveStep {
+		t.Errorf("stale debounce tick must not load, out=%+v", m.out)
+	}
+
+	// The current tick loads the row under the cursor (the brew step child).
+	m.Update(histSelectMsg{gen: gen})
+	if m.out.kind != outHistStep || m.out.run != 0 || m.out.step != 0 {
+		t.Fatalf("debounce should load the cursor's step, out=%+v", m.out)
+	}
+	if got := ansi.Strip(m.vp.View()); !strings.Contains(got, "brew") {
+		t.Errorf("Output should show the brew log, got %q", got)
+	}
+	if m.follow {
+		t.Error("load-on-navigate should disable follow")
+	}
+}
+
+// TestHistoryDebounceIgnoredWhenUnfocused proves a pending debounce tick does not
+// steal the Output once the user has tabbed away from the History pane.
+func TestHistoryDebounceIgnoredWhenUnfocused(t *testing.T) {
+	m, _ := historyModel(t)
+	m.histCursor = 0
+	m.out = outSel{kind: outLiveStep, step: 0}
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown}) // schedules, cursor → 1
+	gen := m.histSelGen
+	m.focus = FocusSteps // user tabbed away before the debounce fired
+	m.Update(histSelectMsg{gen: gen})
+	if m.out.kind != outLiveStep {
+		t.Errorf("debounce must not steal Output after focus left History, out=%+v", m.out)
+	}
+}
+
+// TestWrapToggleKey proves the 'w' key flips the Output wrap state and the
+// history subtitle tracks it.
+func TestWrapToggleKey(t *testing.T) {
+	m, _ := historyModel(t)
+	m.histCursor = 0
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // expand run 0
+	m.histCursor = 1
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // select the brew step
+	if !m.wrap {
+		t.Fatal("wrap should default on")
+	}
+	if _, sub := m.outputTitleCount(); !strings.Contains(sub, "wrap:on") {
+		t.Fatalf("subtitle should show wrap:on, got %q", sub)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")})
+	if m.wrap {
+		t.Error("'w' should toggle wrap off")
+	}
+	if _, sub := m.outputTitleCount(); !strings.Contains(sub, "wrap:off") {
+		t.Errorf("subtitle should show wrap:off after toggle, got %q", sub)
+	}
+}
+
 // TestHistoryReadOnly proves a history selection can never trigger a live-run
 // mutation: retry is a no-op even when a live step is failed.
 func TestHistoryReadOnly(t *testing.T) {

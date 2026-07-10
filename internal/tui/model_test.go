@@ -300,7 +300,7 @@ func TestConfigOpenKeysWired(t *testing.T) {
 	}
 }
 
-// TestTabCyclesFocus proves Tab advances Steps→Output→History→Steps, Shift+Tab
+// TestTabCyclesFocus proves Tab advances Steps→History→Output→Steps, Shift+Tab
 // reverses, and the footer text tracks the focused pane.
 func TestTabCyclesFocus(t *testing.T) {
 	m, _, _ := testModel(demoSteps())
@@ -310,23 +310,23 @@ func TestTabCyclesFocus(t *testing.T) {
 	}
 	foot := m.renderFooterBar()
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	if m.focus != FocusOutput {
-		t.Errorf("tab → %v, want Output", m.focus)
+	if m.focus != FocusHistory {
+		t.Errorf("tab → %v, want History", m.focus)
 	}
 	if m.renderFooterBar() == foot {
 		t.Error("footer should change with focus")
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	if m.focus != FocusHistory {
-		t.Errorf("tab → %v, want History", m.focus)
+	if m.focus != FocusOutput {
+		t.Errorf("tab → %v, want Output", m.focus)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if m.focus != FocusSteps {
 		t.Errorf("tab wrap → %v, want Steps", m.focus)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
-	if m.focus != FocusHistory {
-		t.Errorf("shift+tab → %v, want History", m.focus)
+	if m.focus != FocusOutput {
+		t.Errorf("shift+tab → %v, want Output", m.focus)
 	}
 }
 

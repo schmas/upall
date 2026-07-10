@@ -35,3 +35,9 @@ type RunDoneMsg struct{}
 type pagerDoneMsg struct{ err error }
 
 type tickMsg time.Time
+
+// histSelectMsg fires after the History load-on-navigate debounce elapses. gen
+// is the generation captured when the cursor last moved; the handler acts only
+// when it still matches m.histSelGen, so rapid navigation loads the log only
+// for the row the cursor finally settles on.
+type histSelectMsg struct{ gen int }

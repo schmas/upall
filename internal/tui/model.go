@@ -32,13 +32,13 @@ const (
 )
 
 // paneFocus identifies which of the three dashboard panes has keyboard focus.
-// Tab cycles Steps → Output → History → Steps.
+// Tab cycles Steps → History → Output → Steps.
 type paneFocus int
 
 const (
 	FocusSteps paneFocus = iota
-	FocusOutput
 	FocusHistory
+	FocusOutput
 )
 
 // rect is a pane's outer rectangle on screen (including its border), used both
@@ -154,6 +154,7 @@ type Model struct {
 	runs          []history.Run
 	histExpanded  []bool       // per-run expand flag (len == len(runs))
 	histCursor    int          // cursor over the flattened History rows
+	histSelGen    int          // generation counter debouncing load-on-navigate
 	scratch       *vt.Emulator // scratch emulator for decoding history logs
 	histTruncated bool         // current history render was capped (show hint)
 

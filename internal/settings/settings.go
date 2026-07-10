@@ -57,7 +57,7 @@ var knownActions = []string{
 	"start", "follow", "all-logs", "retry", "restart", "pager", "quit",
 	"focus-next", "focus-prev",
 	"filter-next", "filter-prev", "toggle",
-	"expand", "collapse",
+	"expand", "collapse", "wrap",
 	"open-config", "open-config-dir",
 }
 
@@ -93,6 +93,7 @@ func defaultKeys() map[string][]string {
 		"toggle":          {" "},
 		"expand":          {"right", "enter"},
 		"collapse":        {"left"},
+		"wrap":            {"w"},
 		"open-config":     {"c"},
 		"open-config-dir": {"C"},
 	}
