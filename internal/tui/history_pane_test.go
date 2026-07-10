@@ -45,7 +45,9 @@ func writeRun(t *testing.T, root, name string, fixes []stepFix) string {
 	return dir
 }
 
-// historyModel builds a sized model whose run-dir parent holds two past runs.
+// historyModel builds a sized model whose run-log root holds two past runs. No
+// run is in progress, so all past runs are browsable (the run dir is created
+// lazily on the first run, not at startup).
 func historyModel(t *testing.T) (*Model, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -56,14 +58,10 @@ func historyModel(t *testing.T) (*Model, string) {
 	writeRun(t, root, "20260708-090000", []stepFix{
 		{"01-brew.log", "brew", "Homebrew", engine.StateOK, "older run\n"},
 	})
-	cur := filepath.Join(root, "20260709-120000") // the "live" run, excluded from history
-	if err := os.MkdirAll(cur, 0o700); err != nil {
-		t.Fatal(err)
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	rc := &runControl{ctx: ctx, cancel: cancel, runner: engine.NewRunner("", nil), steps: demoSteps(), launch: func(func()) {}}
-	m := New(demoSteps(), cur, rc, settings.Defaults())
+	m := New(demoSteps(), root, 0, rc, settings.Defaults())
 	sizeUp(m)
 	m.focus = FocusHistory
 	return m, root
@@ -235,12 +233,10 @@ func TestHistoryCapTruncates(t *testing.T) {
 	writeRun(t, root, "20260709-090000", []stepFix{
 		{"01-brew.log", "brew", "Homebrew", engine.StateOK, big.String()},
 	})
-	cur := filepath.Join(root, "20260709-120000")
-	os.MkdirAll(cur, 0o700)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	rc := &runControl{ctx: ctx, cancel: cancel, runner: engine.NewRunner("", nil), steps: demoSteps(), launch: func(func()) {}}
-	m := New(demoSteps(), cur, rc, settings.Defaults())
+	m := New(demoSteps(), root, 0, rc, settings.Defaults())
 	sizeUp(m)
 
 	m.out = outSel{kind: outHistStep, run: 0, step: 0}

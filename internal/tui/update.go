@@ -78,6 +78,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.running = false
 		m.activeIdx = -1
 		m.totalEnd = time.Now()
+		// The run finished: record its manifest and refresh the History pane so the
+		// just-completed run shows up as the latest entry.
+		m.recordManifest()
+		m.refreshHistory()
 		return m, nil
 
 	case tickMsg:
@@ -464,6 +468,7 @@ func (m *Model) retry() tea.Cmd {
 	// showing the previous run's frozen value (mirrors restartAll).
 	m.totalStart = time.Now()
 	m.totalEnd = time.Time{}
+	m.refreshHistory() // hide the current run while it re-runs
 	m.rebuildContent()
 	// launch synchronously (on the update goroutine) so wg.Add happens-before
 	// any subsequent quit reap; only the runner itself is a goroutine.
@@ -479,6 +484,7 @@ func (m *Model) restartAll() tea.Cmd {
 	if m.running {
 		return nil
 	}
+	m.ensureRunDir()
 	m.applyExclusions()
 	for i := range m.steps {
 		resetTerm(m.terms[i])
@@ -492,6 +498,7 @@ func (m *Model) restartAll() tea.Cmd {
 	m.follow = true
 	m.totalStart = time.Now()
 	m.totalEnd = time.Time{}
+	m.refreshHistory() // hide the current run while it re-runs
 	m.rebuildContent()
 	m.rc.launch(func() { m.rc.runner.RunAll(m.rc.ctx, m.rc.steps) })
 	return nil

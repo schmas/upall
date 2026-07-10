@@ -15,7 +15,8 @@ type styles struct {
 	success lipgloss.Color
 	failure lipgloss.Color
 
-	selected         lipgloss.Style // the highlighted row in the focused list
+	selected         lipgloss.Style // active filter tab / All-logs label, progress fill
+	cursor           lipgloss.Style // the list-cursor row: a solid reverse-video bar
 	muted            lipgloss.Style // dimmed / secondary text
 	sep              lipgloss.Style // separators (── label ──)
 	header           lipgloss.Style // header title text
@@ -33,6 +34,10 @@ func buildStyles(t settings.Theme) styles {
 		success:  lipgloss.Color(t.Success),
 		failure:  lipgloss.Color(t.Failure),
 		selected: lipgloss.NewStyle().Bold(true).Foreground(accent),
+		// The list cursor is a reverse-video bar (accent becomes the background)
+		// rather than accent-colored text: a green-on-green foreground was
+		// invisible against the green ✓ glyphs and labels in the History pane.
+		cursor:   lipgloss.NewStyle().Bold(true).Reverse(true).Foreground(accent),
 		muted:    lipgloss.NewStyle().Foreground(dim),
 		sep:      lipgloss.NewStyle().Foreground(dim),
 		header:   lipgloss.NewStyle().Bold(true),

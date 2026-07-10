@@ -97,10 +97,11 @@ func run(steps []engine.Step, plainFlag bool, set settings.Settings) int {
 
 	// History dir is a single root used for both writing new runs and browsing
 	// past ones. Keep honors precedence: UPALL_KEEP env › config › default.
-	runDir, err := engine.NewRunDir(set.History.Dir, settings.ResolveKeep(set.History.Keep))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "upall: warning: logging disabled: %v\n", err)
+	root := set.History.Dir
+	if root == "" {
+		root = engine.CacheRoot()
 	}
+	keep := settings.ResolveKeep(set.History.Keep)
 
 	// The sudo keepalive spans the whole session (both modes), so a retried or
 	// late sudo step never has to prompt inside the pty (stdin=/dev/null).
@@ -114,13 +115,20 @@ func run(steps []engine.Step, plainFlag bool, set settings.Settings) int {
 	}
 
 	if useTUI {
-		failed, err := tui.Run(steps, runDir, set)
+		// The TUI creates its run dir lazily, on the first run, so merely opening
+		// the dashboard records nothing and never rotates real history.
+		failed, err := tui.Run(steps, root, keep, set)
 		if err != nil {
 			fail(err)
 		}
 		return failed
 	}
 
+	// Plain mode always runs, so create the run dir up front.
+	runDir, err := engine.NewRunDir(root, keep)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "upall: warning: logging disabled: %v\n", err)
+	}
 	// Plain mode: Ctrl-C / SIGTERM cancels the run and its child.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

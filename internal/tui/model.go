@@ -7,7 +7,6 @@ package tui
 import (
 	"context"
 	"io"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -127,7 +126,9 @@ type runControl struct {
 type Model struct {
 	rc     *runControl
 	steps  []engine.Step
-	runDir string
+	root   string            // run-log root; history is browsed here and new runs written under it
+	keep   int               // run-log dirs to retain when a run creates a new one
+	runDir string            // the current run's dir; "" until the first run actually starts
 	set    settings.Settings // user config; drives keys/theme/behavior (phase 2+)
 
 	terms  []*vt.Emulator
@@ -151,10 +152,10 @@ type Model struct {
 
 	// Read-only run history (scanned once at launch) and its browse state.
 	runs          []history.Run
-	histExpanded  []bool         // per-run expand flag (len == len(runs))
-	histCursor    int            // cursor over the flattened History rows
-	scratch       *vt.Emulator   // scratch emulator for decoding history logs
-	histTruncated bool           // current history render was capped (show hint)
+	histExpanded  []bool       // per-run expand flag (len == len(runs))
+	histCursor    int          // cursor over the flattened History rows
+	scratch       *vt.Emulator // scratch emulator for decoding history logs
+	histTruncated bool         // current history render was capped (show hint)
 
 	follow     bool
 	running    bool
@@ -177,13 +178,15 @@ type Model struct {
 }
 
 // New builds the model. rc.runner/launch are wired by Run after the program is
-// created. set is the resolved user config (consumed from phase 2 onward).
-func New(steps []engine.Step, runDir string, rc *runControl, set settings.Settings) *Model {
+// created. root is the run-log root browsed by History; the current run's dir is
+// created lazily on the first run so merely opening upall records nothing.
+func New(steps []engine.Step, root string, keep int, rc *runControl, set settings.Settings) *Model {
 	n := len(steps)
 	m := &Model{
 		rc:        rc,
 		steps:     steps,
-		runDir:    runDir,
+		root:      root,
+		keep:      keep,
 		set:       set,
 		terms:     make([]*vt.Emulator, n),
 		states:    make([]engine.State, n),
@@ -201,9 +204,10 @@ func New(steps []engine.Step, runDir string, rc *runControl, set settings.Settin
 		follow:    set.UI.Follow,
 		activeIdx: -1,
 	}
-	// Read-only history of past runs, scanned once (cheap: manifests only, no
-	// logfiles). A failed scan degrades to an empty History pane.
-	m.runs = scanHistory(runDir)
+	// Read-only history of past runs, scanned up front (cheap: manifests only, no
+	// logfiles) and refreshed after each run. Nothing is excluded yet — there is
+	// no current run until the user starts one. A failed scan yields empty history.
+	m.runs = scanHistory(root, "")
 	m.histExpanded = make([]bool, len(m.runs))
 	// A scratch emulator decodes on-disk history logs into the Output pane; it is
 	// reset and re-fed per selection (never concurrent with the step emulators).
@@ -238,12 +242,58 @@ func (m *Model) Init() tea.Cmd {
 // is called synchronously on the update goroutine so its wg.Add happens-before
 // any later quit reap (no WaitGroup race).
 func (m *Model) begin() {
+	m.ensureRunDir()
 	m.applyExclusions()
 	m.started = true
 	m.running = true
 	m.totalStart = time.Now()
 	m.totalEnd = time.Time{}
+	m.refreshHistory()
 	m.rc.launch(func() { m.rc.runner.RunAll(m.rc.ctx, m.rc.steps) })
+}
+
+// ensureRunDir creates the run's log directory on the first run and points the
+// runner at it. Creating it lazily (rather than at startup) is what keeps merely
+// opening upall from recording an empty run — and from rotating real history. A
+// no-op once the dir exists, or when logging is disabled (root == "").
+func (m *Model) ensureRunDir() {
+	if m.runDir != "" || m.root == "" {
+		return
+	}
+	dir, err := engine.NewRunDir(m.root, m.keep)
+	if err != nil {
+		return // logging disabled; the run still proceeds without on-disk logs
+	}
+	m.runDir = dir
+	m.rc.runner.RunDir = dir
+}
+
+// recordManifest writes the current run's manifest so the History browser can
+// list it. Gated on an actual run: nothing is written until a run has started
+// and its dir exists. Best-effort — a write failure never affects the run.
+func (m *Model) recordManifest() {
+	if m.runDir == "" || !m.started {
+		return
+	}
+	_ = engine.WriteManifest(m.runDir, m.steps, m.states, m.durs, time.Now())
+}
+
+// refreshHistory re-scans the run-log root so the History pane reflects what is
+// on disk. The current run is hidden only while it is in flight (it lives in the
+// Steps pane); once finished it is included so it shows as the latest entry.
+func (m *Model) refreshHistory() {
+	exclude := ""
+	if m.running {
+		exclude = m.runDir
+	}
+	m.runs = scanHistory(m.root, exclude)
+	m.histExpanded = make([]bool, len(m.runs))
+	if rows := len(m.histRows()); m.histCursor >= rows {
+		m.histCursor = rows - 1
+	}
+	if m.histCursor < 0 {
+		m.histCursor = 0
+	}
 }
 
 // applyExclusions flags every pre-run-excluded step Skip before launch, so the
@@ -267,20 +317,23 @@ func makeAllTrue(n int) []bool {
 	return b
 }
 
-// scanHistory lists past runs under the run-dir's parent (the cache root new
-// runs also write to), excluding the current in-progress run. Best-effort: any
-// error yields an empty history.
-func scanHistory(runDir string) []history.Run {
-	if runDir == "" {
+// scanHistory lists past runs under root, optionally excluding one dir (the
+// in-progress run, which is shown in the Steps pane instead). An empty root or a
+// scan error yields empty history. Best-effort by design.
+func scanHistory(root, exclude string) []history.Run {
+	if root == "" {
 		return nil
 	}
-	runs, err := history.Scan(filepath.Dir(runDir), time.Now())
+	runs, err := history.Scan(root, time.Now())
 	if err != nil {
 		return nil
 	}
+	if exclude == "" {
+		return runs
+	}
 	out := make([]history.Run, 0, len(runs))
 	for _, r := range runs {
-		if r.Dir != runDir { // hide the live run; it lives in the Steps pane
+		if r.Dir != exclude {
 			out = append(out, r)
 		}
 	}

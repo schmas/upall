@@ -57,7 +57,7 @@ func TestRenderSummaryWritesManifest(t *testing.T) {
 	durs := []engine.Result{{Dur: 2 * time.Second}}
 
 	var out bytes.Buffer
-	RenderSummary(&out, "upall", steps, states, durs, dir, false, false)
+	RenderSummary(&out, "upall", steps, states, durs, dir, false, false, true)
 
 	m, err := engine.ReadManifest(dir)
 	if err != nil {
@@ -75,7 +75,7 @@ func TestRenderSummaryNoManifestWhenNoRunDir(t *testing.T) {
 	RenderSummary(&out, "upall",
 		[]engine.Step{{Key: "a", Label: "A"}},
 		[]engine.State{engine.StateOK},
-		[]engine.Result{{}}, "", false, false)
+		[]engine.Result{{}}, "", false, false, true)
 	// Reaching here without a panic/error is the assertion; there is no file.
 }
 

@@ -27,7 +27,7 @@ func integrationModel(t *testing.T) (*Model, *int) {
 		steps:  demoSteps(),
 		launch: func(func()) { launched++ },
 	}
-	return New(demoSteps(), "", rc, settings.Defaults()), &launched
+	return New(demoSteps(), "", 0, rc, settings.Defaults()), &launched
 }
 
 // TestProgramQuitsOnQ is the end-to-end proof the pty harness could not give:

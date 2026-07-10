@@ -26,7 +26,7 @@ func testModel(steps []engine.Step) (*Model, *int, *bool) {
 		steps:  steps,
 		launch: func(func()) { launched++ },
 	}
-	return New(steps, "", rc, settings.Defaults()), &launched, &canceled
+	return New(steps, "", 0, rc, settings.Defaults()), &launched, &canceled
 }
 
 func demoSteps() []engine.Step {
@@ -208,6 +208,83 @@ func TestPreRunFooterShowsToggleHint(t *testing.T) {
 	}
 }
 
+// runModelInRoot builds a synchronous model rooted at a real (temp) run-log
+// root, so run-dir creation and history scanning hit the filesystem.
+func runModelInRoot(t *testing.T, root string) *Model {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	rc := &runControl{ctx: ctx, cancel: cancel, runner: engine.NewRunner("", nil), steps: demoSteps(), launch: func(func()) {}}
+	m := New(demoSteps(), root, 5, rc, settings.Defaults())
+	sizeUp(m)
+	return m
+}
+
+// TestOpenDoesNotRecordHistory proves merely opening upall records nothing: no
+// run dir is created, the root is untouched, and a quit-without-run writes no
+// manifest. This is the fix for a phantom history entry appearing on every open.
+func TestOpenDoesNotRecordHistory(t *testing.T) {
+	root := t.TempDir()
+	m := runModelInRoot(t, root)
+
+	if m.runDir != "" {
+		t.Errorf("open must not create a run dir, got %q", m.runDir)
+	}
+	if dirs := engine.RunDirs(root); len(dirs) != 0 {
+		t.Errorf("open must leave the root empty, got %v", dirs)
+	}
+	if len(m.runs) != 0 {
+		t.Errorf("history should be empty on a fresh root, got %d", len(m.runs))
+	}
+	// Quit-without-run path: started is false, so nothing is recorded.
+	m.recordManifest()
+	if dirs := engine.RunDirs(root); len(dirs) != 0 {
+		t.Errorf("recordManifest before any run must write nothing, got %v", dirs)
+	}
+}
+
+// TestRunRecordsAndRefreshesHistory proves a run creates its dir lazily, is
+// hidden from History while in flight, and is recorded + shown as the latest
+// entry once it finishes.
+func TestRunRecordsAndRefreshesHistory(t *testing.T) {
+	root := t.TempDir()
+	m := runModelInRoot(t, root)
+
+	m.begin()
+	if m.runDir == "" {
+		t.Fatal("begin should create the run dir")
+	}
+	if len(m.runs) != 0 {
+		t.Errorf("the in-flight run must be hidden from History, got %d", len(m.runs))
+	}
+
+	for i := range m.steps {
+		m.states[i] = engine.StateOK
+		m.durs[i] = engine.Result{Dur: time.Second}
+	}
+	m.Update(RunDoneMsg{})
+
+	if len(m.runs) != 1 {
+		t.Fatalf("finished run should appear in History, got %d", len(m.runs))
+	}
+	if _, err := engine.ReadManifest(m.runDir); err != nil {
+		t.Errorf("finished run should have a manifest on disk: %v", err)
+	}
+}
+
+// TestCursorStyleIsReverseVideo proves the list cursor uses a reverse-video bar
+// (visible against green ✓ glyphs/labels), while the shared selected style stays
+// foreground-only so it never inverts the progress bar or filter tabs.
+func TestCursorStyleIsReverseVideo(t *testing.T) {
+	st := testStyles()
+	if !st.cursor.GetReverse() {
+		t.Error("cursor highlight should be reverse video so it is visible against green text")
+	}
+	if st.selected.GetReverse() {
+		t.Error("selected (tabs/progress fill) must not be reverse — it would invert the progress bar")
+	}
+}
+
 // TestConfigOpenKeysWired proves the config-open keys resolve to a command from
 // any pane (global handler), so 'c' opens config.toml and 'C' opens the config
 // dir. The command's filesystem work is deferred into the returned tea.Cmd, so
@@ -268,7 +345,7 @@ func TestKeysBuiltFromSettings(t *testing.T) {
 		steps:  demoSteps(),
 		launch: func(func()) {},
 	}
-	m := New(demoSteps(), "", rc, set)
+	m := New(demoSteps(), "", 0, rc, set)
 	sizeUp(m)
 
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})

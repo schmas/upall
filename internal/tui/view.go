@@ -147,7 +147,9 @@ func (m *Model) histRowText(i int, r histRow, focused bool) string {
 	}
 	text = ansi.Truncate(text, m.histRect.w-2, "…")
 	if focused && i == m.histCursor {
-		return m.st.selected.Render(text)
+		// Strip the glyph's embedded color so the reverse-video cursor bar covers
+		// the whole row (see stepRow): otherwise the ✓/✗ reset kills the highlight.
+		return m.st.cursor.Render(ansi.Strip(text))
 	}
 	return text
 }
@@ -258,13 +260,16 @@ func (m *Model) stepRow(i int) string {
 	row := fmt.Sprintf("%s %-*s %s", glyph, labelW, label, elapsed)
 	selected := m.isLiveStep() && m.out.step == i
 	excluded := i < len(m.included) && !m.included[i]
+	// A row-level style must be applied to text with no embedded color: the
+	// glyph's own SGR reset (e.g. the green ✓) would otherwise terminate the row
+	// style early, leaving the label unstyled. Strip first, then style the whole row.
 	switch {
 	case selected && excluded:
-		return m.st.selectedExcluded.Render(row) // cursor on excluded: dark green + strikethrough
+		return m.st.selectedExcluded.Render(ansi.Strip(row)) // cursor on excluded: dark green + strikethrough
 	case selected:
-		return m.st.selected.Render(row)
+		return m.st.cursor.Render(ansi.Strip(row)) // cursor: reverse-video bar
 	case excluded:
-		return m.st.excluded.Render(row) // pre-run excluded: dim + strikethrough
+		return m.st.excluded.Render(ansi.Strip(row)) // pre-run excluded: dim + strikethrough
 	default:
 		return row
 	}
@@ -273,7 +278,7 @@ func (m *Model) stepRow(i int) string {
 func (m *Model) allLogsRow() string {
 	row := "≡ All logs"
 	if m.isAllLogs() {
-		return m.st.selected.Render(row)
+		return m.st.cursor.Render(row)
 	}
 	return m.st.muted.Render(row)
 }
