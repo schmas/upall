@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/schmas/upall/internal/engine"
-	"github.com/schmas/upall/internal/notify"
+	notifypkg "github.com/schmas/upall/internal/notify"
 )
 
 // ANSI codes used by the plain sink; blanked at call sites when color is off.
@@ -20,16 +21,17 @@ const (
 
 const summaryWidth = 72
 
-// End prints the run summary and returns the failed-step count (exit code).
+// End prints the run summary and returns the failed-step count (exit code). The
+// plain sink always ran the steps, so it records the manifest unconditionally.
 func (s *Sink) End(title string) int {
-	return RenderSummary(s.out, title, s.steps, s.states, s.durs, s.runDir, s.color)
+	return RenderSummary(s.out, title, s.steps, s.states, s.durs, s.runDir, s.color, s.notify, true)
 }
 
 // RenderSummary writes the closing summary (counts, per-step results, log dir)
 // and, on failure, a hint plus a desktop notification. It is shared by the plain
 // sink's End and the TUI's on-quit normal-buffer flush so both look identical.
 // Returns the number of failed/aborted steps.
-func RenderSummary(out io.Writer, title string, steps []engine.Step, states []engine.State, durs []engine.Result, runDir string, color bool) int {
+func RenderSummary(out io.Writer, title string, steps []engine.Step, states []engine.State, durs []engine.Result, runDir string, color, notify, record bool) int {
 	c := colorer(color)
 	passed, failed, skipped := tally(states)
 
@@ -50,9 +52,18 @@ func RenderSummary(out io.Writer, title string, steps []engine.Step, states []en
 	if failed > 0 {
 		fmt.Fprintf(out, "%s⚠️  %d step(s) failed.%s\n", c(red), failed, c(reset))
 		reviewFailures(out, steps, states, runDir, color)
-		notify.Failure(title, fmt.Sprintf("%d step(s) failed", failed))
+		if notify {
+			notifypkg.Failure(title, fmt.Sprintf("%d step(s) failed", failed))
+		}
 	} else {
 		fmt.Fprintf(out, "%s✅ All updates completed successfully!%s\n", c(green), c(reset))
+	}
+
+	// Record a per-run manifest for the history browser. Best-effort: a write
+	// failure must not change the exit code or the summary output. Skipped when no
+	// run happened (record == false) or logging is disabled (runDir == "").
+	if record {
+		_ = engine.WriteManifest(runDir, steps, states, durs, time.Now())
 	}
 	return failed
 }

@@ -75,9 +75,11 @@ func loadUserLayer() ([]StepDef, error) {
 	return out, nil
 }
 
-// UserStepsDir resolves the user override directory, honoring XDG_CONFIG_HOME
-// with a ~/.config fallback (macOS usually has no XDG vars set).
-func UserStepsDir() string {
+// ConfigDir resolves upall's config base directory, honoring XDG_CONFIG_HOME
+// with a ~/.config fallback (macOS usually has no XDG vars set). Both steps.d
+// and config.toml resolve under it, so the XDG logic lives in one place.
+// Returns "" only when the home directory cannot be resolved.
+func ConfigDir() string {
 	base := os.Getenv("XDG_CONFIG_HOME")
 	if base == "" {
 		home, err := os.UserHomeDir()
@@ -86,7 +88,16 @@ func UserStepsDir() string {
 		}
 		base = filepath.Join(home, ".config")
 	}
-	return filepath.Join(base, "upall", "steps.d")
+	return filepath.Join(base, "upall")
+}
+
+// UserStepsDir resolves the user override directory (ConfigDir()/steps.d).
+func UserStepsDir() string {
+	dir := ConfigDir()
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "steps.d")
 }
 
 // parseFile decodes one TOML file, tagging errors with the file name so a bad

@@ -45,6 +45,26 @@ func (s State) String() string {
 	}
 }
 
+// ParseState is the inverse of String: it maps a state name back to a State,
+// defaulting to StatePending for unknown/empty input (used when reading a run
+// manifest).
+func ParseState(s string) State {
+	switch s {
+	case "skipped":
+		return StateSkipped
+	case "running":
+		return StateRunning
+	case "ok":
+		return StateOK
+	case "failed":
+		return StateFailed
+	case "aborted":
+		return StateAborted
+	default:
+		return StatePending
+	}
+}
+
 // Glyph returns the single-rune status marker for a state.
 func Glyph(s State) string {
 	switch s {

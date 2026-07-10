@@ -20,7 +20,7 @@ func TestBytesMsgWithQueryDoesNotBlock(t *testing.T) {
 	m, _, _ := testModel(demoSteps())
 	sizeUp(m)
 	startRunning(m)
-	m.sel = 0
+	m.out = outSel{kind: outLiveStep, step: 0}
 	m.follow = false
 
 	done := make(chan struct{})
@@ -52,13 +52,16 @@ func TestIntegrationProgressAndColor(t *testing.T) {
 	m, _ := integrationModel(t)
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(120, 40))
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyEnter}) // confirm preview
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter}) // start the run from the idle dashboard
 	tm.Send(startMsg{0})
 	tm.Send(bytesMsg{0: []byte("fetch 1%\rfetch 50%\rfetch 100%\r\n\x1b[32mDONE\x1b[0m\r\n")})
 	tm.Send(doneMsg{i: 0, res: engine.Result{State: engine.StateOK}})
 	tm.Send(startMsg{1})
 	tm.Send(doneMsg{i: 1, res: engine.Result{State: engine.StateOK}})
 	tm.Send(RunDoneMsg{})
+	// Select "All logs" so the Output pane shows step 0's collapsed stream (follow
+	// mode otherwise leaves the last-started, empty step selected).
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
 
 	// Wait until the final frame shows the collapsed progress + status, then quit.
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {

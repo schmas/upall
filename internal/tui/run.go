@@ -10,6 +10,7 @@ import (
 
 	"github.com/schmas/upall/internal/engine"
 	"github.com/schmas/upall/internal/plain"
+	"github.com/schmas/upall/internal/settings"
 )
 
 // reapTimeout bounds how long Run waits, after cancelling, for the runner
@@ -20,14 +21,16 @@ const reapTimeout = 5 * time.Second
 // Run drives the full TUI session over steps and returns the failed-step count.
 // On quit it leaves the alt screen and prints the summary to the normal buffer,
 // preserving it in scrollback.
-func Run(steps []engine.Step, runDir string) (int, error) {
+func Run(steps []engine.Step, root string, keep int, set settings.Settings) (int, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	rc := &runControl{ctx: ctx, cancel: cancel, steps: steps}
-	m := New(steps, runDir, rc)
+	m := New(steps, root, keep, rc, set)
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	sink := NewSink(p)
-	rc.runner = engine.NewRunner(runDir, sink)
+	// The run dir is created lazily on the first run (m.ensureRunDir), so the
+	// runner starts with no dir; the model points it at the dir once a run begins.
+	rc.runner = engine.NewRunner("", sink)
 	rc.launch = func(fn func()) {
 		rc.wg.Add(1)
 		go func() {
@@ -47,7 +50,9 @@ func Run(steps []engine.Step, runDir string) (int, error) {
 	if fm == nil {
 		fm = m
 	}
-	failed := plain.RenderSummary(os.Stdout, "upall", steps, fm.States(), fm.Durations(), runDir, true)
+	// Record the manifest only if a run actually started; merely opening upall and
+	// quitting must not leave a history entry. runDir is "" when no run began.
+	failed := plain.RenderSummary(os.Stdout, "upall", steps, fm.States(), fm.Durations(), fm.runDir, true, set.Notify.Enabled, fm.started)
 	return failed, err
 }
 

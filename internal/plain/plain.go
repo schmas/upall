@@ -27,6 +27,7 @@ type Sink struct {
 	out    io.Writer
 	color  bool
 	runDir string
+	notify bool
 	width  int
 
 	// mu guards buf. Steps run serially, and runCmd joins its copy goroutine
@@ -39,8 +40,9 @@ type Sink struct {
 }
 
 // New builds a plain sink over steps, writing to out. color enables ANSI
-// passthrough; when false, ANSI is stripped from step output.
-func New(steps []engine.Step, out io.Writer, color bool, runDir string) *Sink {
+// passthrough; when false, ANSI is stripped from step output. notify enables the
+// desktop notification on a failed run.
+func New(steps []engine.Step, out io.Writer, color bool, runDir string, notify bool) *Sink {
 	return &Sink{
 		steps:  steps,
 		states: make([]engine.State, len(steps)),
@@ -48,6 +50,7 @@ func New(steps []engine.Step, out io.Writer, color bool, runDir string) *Sink {
 		out:    out,
 		color:  color,
 		runDir: runDir,
+		notify: notify,
 		width:  72,
 	}
 }

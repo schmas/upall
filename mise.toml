@@ -1,0 +1,5 @@
+# mise tool versions for upall development.
+# Install with: mise install
+[tools]
+go = "1.26.5"       # matches the `go` directive in go.mod
+goreleaser = "2"    # release tooling; CI uses goreleaser-action "~> v2"

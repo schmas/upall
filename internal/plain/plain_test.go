@@ -2,15 +2,18 @@ package plain
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/schmas/upall/internal/engine"
 )
 
 func newTestSink(color bool) (*Sink, *bytes.Buffer) {
 	var out bytes.Buffer
-	s := New([]engine.Step{{Key: "a", Label: "A"}}, &out, color, "")
+	s := New([]engine.Step{{Key: "a", Label: "A"}}, &out, color, "", true)
 	return s, &out
 }
 
@@ -40,6 +43,40 @@ func TestPlainBodyKeepsANSIColorOn(t *testing.T) {
 	if !strings.HasPrefix(out.String(), "\x1b[31mred\x1b[0m\n") {
 		t.Fatalf("color-on body should keep ANSI, got %q", out.String())
 	}
+}
+
+// TestRenderSummaryWritesManifest proves the shared exit path leaves a valid
+// manifest.json so both plain and TUI runs record history.
+func TestRenderSummaryWritesManifest(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "20260709-090000")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	steps := []engine.Step{{Key: "a", Label: "A"}}
+	states := []engine.State{engine.StateOK}
+	durs := []engine.Result{{Dur: 2 * time.Second}}
+
+	var out bytes.Buffer
+	RenderSummary(&out, "upall", steps, states, durs, dir, false, false, true)
+
+	m, err := engine.ReadManifest(dir)
+	if err != nil {
+		t.Fatalf("manifest not written by RenderSummary: %v", err)
+	}
+	if len(m.Steps) != 1 || m.Steps[0].State != "ok" || m.Steps[0].DurMs != 2000 {
+		t.Errorf("manifest steps = %+v", m.Steps)
+	}
+}
+
+// TestRenderSummaryNoManifestWhenNoRunDir proves a runDir of "" writes nothing
+// and does not error (logging disabled).
+func TestRenderSummaryNoManifestWhenNoRunDir(t *testing.T) {
+	var out bytes.Buffer
+	RenderSummary(&out, "upall",
+		[]engine.Step{{Key: "a", Label: "A"}},
+		[]engine.State{engine.StateOK},
+		[]engine.Result{{}}, "", false, false, true)
+	// Reaching here without a panic/error is the assertion; there is no file.
 }
 
 // TestPlainNoTrailingNewlineStillPrints: a step whose last line has no trailing
