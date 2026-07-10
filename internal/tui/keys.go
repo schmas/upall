@@ -31,6 +31,9 @@ type keyMap struct {
 	Expand   key.Binding
 	Collapse key.Binding
 
+	OpenConfig    key.Binding
+	OpenConfigDir key.Binding
+
 	Help key.Binding
 }
 
@@ -67,7 +70,11 @@ func keysFrom(set settings.Settings) keyMap {
 		Toggle:     bind("toggle", "space", "toggle"),
 		Expand:     bind("expand", "→", "expand"),
 		Collapse:   bind("collapse", "←", "collapse"),
-		Help:       key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+
+		OpenConfig:    bind("open-config", "c", "config file"),
+		OpenConfigDir: bind("open-config-dir", "C", "config dir"),
+
+		Help: key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	}
 }
 
@@ -80,6 +87,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Top, k.Bottom, k.FocusNext, k.FocusPrev},
 		{k.Start, k.Follow, k.All, k.Retry, k.Restart, k.Pager},
-		{k.FilterPrev, k.FilterNext, k.Toggle, k.Expand, k.Collapse, k.Quit},
+		{k.FilterPrev, k.FilterNext, k.Toggle, k.Expand, k.Collapse},
+		{k.OpenConfig, k.OpenConfigDir, k.Quit},
 	}
 }

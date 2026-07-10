@@ -71,16 +71,19 @@ key below is rebindable via `[keys]` in `config.toml`.
 | `r` | Retry the selected failed step (only when idle) | Steps |
 | `R` | Re-run every included step | Steps |
 | `g` / `G` | Scroll to top / bottom | Output |
-| `⏎`/`→`, `←` | Expand-or-select / collapse a past run | History |
+| `⏎`/`→`, `←` | Expand-or-select / collapse a past run (or click) | History |
 | `l` | Open the selected log in the pager | Steps / History |
+| `c` / `C` | Open `config.toml` / the config folder | any |
 | `?` | Toggle the full-key footer | any |
 | `q` / `ctrl-c` | Quit (cancels a running step) | any |
 
 The Steps filter tabs are **view-only** — they never change what runs.
 Excluding a step with `space` (dimmed + struck through) skips it for the run; the
 header `N/M` counts only included steps. The History pane is **read-only**:
-expanding a run reveals its steps and an `All logs` child that load past logs into
-the Output pane (in-pane, plus `l` for the full log in the pager).
+expanding a run reveals its steps (each with its own duration) and an `All logs`
+child that load past logs into the Output pane (in-pane, plus `l` for the full log
+in the pager). Clicking a run header expands/collapses it; clicking a step opens
+its log.
 
 Plain streaming is used automatically for a non-TTY stdout, `--plain`, or `NO_COLOR`.
 
@@ -119,7 +122,7 @@ enabled = true               # desktop notification on a failed run
 
 Rebindable actions: `up, down, top, bottom, start, follow, all-logs, retry,
 restart, pager, quit, focus-next, focus-prev, filter-next, filter-prev, toggle,
-expand, collapse`.
+expand, collapse, open-config, open-config-dir`.
 
 ## Configuring steps
 

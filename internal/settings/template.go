@@ -24,7 +24,7 @@ schema = 1
 # [keys] rebinds any action to a list of keys (replaces that action's default
 # list). Known actions: up, down, top, bottom, start, follow, all-logs, retry,
 # restart, pager, quit, focus-next, focus-prev, filter-next, filter-prev,
-# toggle, expand, collapse.
+# toggle, expand, collapse, open-config, open-config-dir.
 # [keys]
 # up          = ["up", "k"]
 # down        = ["down", "j"]
@@ -44,6 +44,8 @@ schema = 1
 # toggle      = [" "]
 # expand      = ["right", "enter"]
 # collapse    = ["left"]
+# open-config     = ["c"]
+# open-config-dir = ["C"]
 
 # [theme] colors accept a named color, a 256-palette index, or a hex value.
 # [theme]

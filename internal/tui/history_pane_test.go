@@ -143,6 +143,57 @@ func TestHistorySelectAllConcatenates(t *testing.T) {
 	}
 }
 
+// TestHistoryStepShowsDuration proves an expanded run's step rows display their
+// per-step duration (from the manifest), not just the run total on the header.
+func TestHistoryStepShowsDuration(t *testing.T) {
+	m, _ := historyModel(t)
+	m.histCursor = 0
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // expand run 0
+	v := ansi.Strip(m.renderHistoryPane())
+	// Each fixture step ran for 1s (engine.Hms(time.Second) == "1s").
+	if !strings.Contains(v, "Homebrew 1s") {
+		t.Errorf("expanded step row should show its duration, got:\n%s", v)
+	}
+}
+
+// TestHistoryMouseClickExpandsAndSelects proves left-click in the History pane
+// moves the cursor to the clicked row, toggles a run header open/closed, and
+// selects a step child's log into Output — previously a click only focused the
+// pane, leaving the cursor (and highlight) elsewhere.
+func TestHistoryMouseClickExpandsAndSelects(t *testing.T) {
+	m, _ := historyModel(t)
+	click := func(row int) {
+		m.Update(tea.MouseMsg{X: 2, Y: m.histRect.y + 1 + row, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	}
+
+	// Click the first run header (content row 0): expands it and lands the cursor.
+	click(0)
+	if !m.histExpanded[0] {
+		t.Fatal("clicking a collapsed run header should expand it")
+	}
+	if m.histCursor != 0 || m.focus != FocusHistory {
+		t.Errorf("click should focus History and move the cursor to the header, cursor=%d focus=%v", m.histCursor, m.focus)
+	}
+
+	// rows: 0 header, 1 brew, 2 mise, 3 all-logs, 4 header(run1). Click brew.
+	click(1)
+	if m.out.kind != outHistStep || m.out.run != 0 || m.out.step != 0 {
+		t.Fatalf("clicking a step child should select it, out=%+v", m.out)
+	}
+	if m.histCursor != 1 {
+		t.Errorf("cursor should follow the clicked child row, got %d", m.histCursor)
+	}
+	if got := ansi.Strip(m.vp.View()); !strings.Contains(got, "brew") {
+		t.Errorf("Output should show the clicked step log, got %q", got)
+	}
+
+	// Click the header again: collapses it.
+	click(0)
+	if m.histExpanded[0] {
+		t.Error("clicking an expanded run header should collapse it")
+	}
+}
+
 // TestHistoryReadOnly proves a history selection can never trigger a live-run
 // mutation: retry is a no-op even when a live step is failed.
 func TestHistoryReadOnly(t *testing.T) {

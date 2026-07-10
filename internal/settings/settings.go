@@ -58,6 +58,7 @@ var knownActions = []string{
 	"focus-next", "focus-prev",
 	"filter-next", "filter-prev", "toggle",
 	"expand", "collapse",
+	"open-config", "open-config-dir",
 }
 
 // isKnownAction reports whether name is a rebindable action.
@@ -74,24 +75,26 @@ func isKnownAction(name string) bool {
 // may mutate the result without affecting Defaults()).
 func defaultKeys() map[string][]string {
 	return map[string][]string{
-		"up":          {"up", "k"},
-		"down":        {"down", "j"},
-		"top":         {"g", "home"},
-		"bottom":      {"G", "end"},
-		"start":       {"enter", "s"},
-		"follow":      {"enter"},
-		"all-logs":    {"a"},
-		"retry":       {"r"},
-		"restart":     {"R"},
-		"pager":       {"l"},
-		"quit":        {"q", "ctrl+c"},
-		"focus-next":  {"tab"},
-		"focus-prev":  {"shift+tab"},
-		"filter-next": {"right", "]"},
-		"filter-prev": {"left", "["},
-		"toggle":      {" "},
-		"expand":      {"right", "enter"},
-		"collapse":    {"left"},
+		"up":              {"up", "k"},
+		"down":            {"down", "j"},
+		"top":             {"g", "home"},
+		"bottom":          {"G", "end"},
+		"start":           {"enter", "s"},
+		"follow":          {"enter"},
+		"all-logs":        {"a"},
+		"retry":           {"r"},
+		"restart":         {"R"},
+		"pager":           {"l"},
+		"quit":            {"q", "ctrl+c"},
+		"focus-next":      {"tab"},
+		"focus-prev":      {"shift+tab"},
+		"filter-next":     {"right", "]"},
+		"filter-prev":     {"left", "["},
+		"toggle":          {" "},
+		"expand":          {"right", "enter"},
+		"collapse":        {"left"},
+		"open-config":     {"c"},
+		"open-config-dir": {"C"},
 	}
 }
 

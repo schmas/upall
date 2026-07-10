@@ -208,6 +208,21 @@ func TestPreRunFooterShowsToggleHint(t *testing.T) {
 	}
 }
 
+// TestConfigOpenKeysWired proves the config-open keys resolve to a command from
+// any pane (global handler), so 'c' opens config.toml and 'C' opens the config
+// dir. The command's filesystem work is deferred into the returned tea.Cmd, so
+// this only checks wiring — it never touches the real config path.
+func TestConfigOpenKeysWired(t *testing.T) {
+	m, _, _ := testModel(demoSteps())
+	sizeUp(m)
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}); cmd == nil {
+		t.Error("'c' should return an open-config command")
+	}
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'C'}}); cmd == nil {
+		t.Error("'C' should return an open-config-dir command")
+	}
+}
+
 // TestTabCyclesFocus proves Tab advances Steps→Output→History→Steps, Shift+Tab
 // reverses, and the footer text tracks the focused pane.
 func TestTabCyclesFocus(t *testing.T) {

@@ -124,6 +124,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.FocusPrev):
 		m.focus = (m.focus + 2) % 3
 		return m, nil
+	case key.Matches(msg, m.keys.OpenConfig):
+		return m, openConfigFileCmd()
+	case key.Matches(msg, m.keys.OpenConfigDir):
+		return m, openConfigDirCmd()
 	}
 
 	// From the idle dashboard the start key launches the run. Gated to Steps
@@ -400,9 +404,39 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.forwardToViewport(msg)
 	case inRect(msg.X, msg.Y, m.histRect):
 		m.focus = FocusHistory
+		// Content rows start one line below the box's top border. Clicking a run
+		// header toggles it; clicking a step/all child selects its log into Output.
+		rows := m.histRows()
+		if row := msg.Y - (m.histRect.y + 1); row >= 0 && row < len(rows) {
+			m.histCursor = row
+			if rows[row].kind == histRowHeader {
+				m.toggleExpandAtCursor(rows)
+			} else {
+				m.expandOrSelectAtCursor(rows)
+			}
+		}
 		return m, nil
 	}
 	return m, nil
+}
+
+// toggleExpandAtCursor expands a collapsed run header or collapses an expanded
+// one. Mouse clicks on a header use this because toggling is the intuitive tree
+// interaction; the keyboard splits the two across ⏎ (expand/select) and ←
+// (collapse).
+func (m *Model) toggleExpandAtCursor(rows []histRow) {
+	if m.histCursor < 0 || m.histCursor >= len(rows) {
+		return
+	}
+	row := rows[m.histCursor]
+	if row.kind != histRowHeader {
+		return
+	}
+	if m.histExpanded[row.run] {
+		m.collapseAtCursor(rows)
+	} else {
+		m.histExpanded[row.run] = true
+	}
 }
 
 func (m *Model) forwardToViewport(msg tea.Msg) (tea.Model, tea.Cmd) {

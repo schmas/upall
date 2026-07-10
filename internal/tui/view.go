@@ -137,7 +137,11 @@ func (m *Model) histRowText(i int, r histRow, focused bool) string {
 		text = fmt.Sprintf("%s %s %s%s", marker, m.glyph(run.Status), run.Label, dur)
 	case histRowStep:
 		rs := m.runs[r.run].Steps[r.step]
-		text = fmt.Sprintf("   %s %s", m.glyph(rs.State), rs.Label)
+		dur := ""
+		if rs.Dur > 0 {
+			dur = " " + engine.Hms(rs.Dur)
+		}
+		text = fmt.Sprintf("   %s %s%s", m.glyph(rs.State), rs.Label, dur)
 	case histRowAll:
 		text = "   ≡ All logs"
 	}
@@ -211,13 +215,13 @@ func (m *Model) renderFooterBar() string {
 		hint = "↑/↓ move · ⏎/→ expand · ← collapse · l pager · tab pane · q quit"
 	default: // FocusSteps
 		if m.started {
-			hint = "↑/↓ move · ⏎ follow · a all · r retry · R re-run · l pager · tab pane · q quit"
+			hint = "↑/↓ move · ⏎ follow · a all · r retry · R re-run · l pager · c config · tab pane · q quit"
 		} else {
-			hint = "⏎ start · ↑/↓ move · space toggle · tab pane · q quit"
+			hint = "⏎ start · ↑/↓ move · space toggle · c config · tab pane · q quit"
 		}
 	}
 	if m.showHelp {
-		hint = "tab/⇧tab pane · ↑/↓ move · ⏎ start/follow · a all · r retry · R re-run · l pager · g/G top/bottom · q quit · ? help"
+		hint = "tab/⇧tab pane · ↑/↓ move · ⏎ start/follow · a all · r retry · R re-run · l pager · g/G top/bottom · c config · C config dir · q quit · ? help"
 	}
 	w := m.width - 2
 	if w < 1 {
