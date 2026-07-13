@@ -3,19 +3,21 @@
 [tools]
 go = "1.26.5"       # matches the `go` directive in go.mod
 goreleaser = "2"    # release tooling; CI uses goreleaser-action "~> v2"
-svu = "3"           # semantic-version util: next tag from conventional commits
+svu = "3"           # semantic-version util: next tag from conventional commits (used by CI + preview)
 
-# Cut a release: svu reads conventional commits, computes the next semver, tags
-# HEAD, and pushes the tag — which triggers .github/workflows/release.yml (smoke
-# test + goreleaser publish). Run from a clean, pushed `main`.
+# Releases are AUTOMATIC: merging to `main` runs .github/workflows/release.yml,
+# which uses svu to bump from conventional commits, then smoke-tests + publishes.
+# There is no manual tag step. This task just previews what the next merge to main
+# would release (or "no bump" if only chore/docs/ci landed since the last tag).
 #   feat: -> minor   fix: -> patch   feat!:/BREAKING CHANGE -> major
-[tasks.release]
-description = "Tag + push next semver (from conventional commits) to trigger the release workflow"
+[tasks.release-preview]
+description = "Preview the version the next merge to main would release (svu), no side effects"
 run = '''
 set -euo pipefail
-next="$(svu next)"
-echo "Releasing ${next} (current: $(svu current))"
-git tag "${next}"
-git push origin "${next}"
-echo "Pushed ${next}; release.yml will smoke-test then publish."
+current="$(svu current)"; next="$(svu next)"
+if [ "${next}" = "${current}" ]; then
+  echo "No releasable commits since ${current} — next merge to main will NOT release."
+else
+  echo "Next merge to main will release ${next} (current: ${current})."
+fi
 '''

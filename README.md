@@ -38,11 +38,14 @@ go install github.com/schmas/upall/cmd/upall@latest
 
 ### Releasing (maintainer)
 
-Versions are derived from [conventional commits](https://www.conventionalcommits.org/) — `feat:` bumps minor, `fix:` bumps patch, `feat!:`/`BREAKING CHANGE:` bumps major. From a clean, pushed `main`:
+Releases are **automatic on merge to `main`**. The release workflow derives the
+version from [conventional commits](https://www.conventionalcommits.org/) via
+`svu` — `feat:` bumps minor, `fix:` bumps patch, `feat!:`/`BREAKING CHANGE:` bumps
+major; a merge with only `chore:`/`docs:`/`ci:` commits publishes nothing. When a
+bump is due it smoke-tests all four targets, then goreleaser publishes.
 
 ```sh
-mise run release   # svu computes the next tag, pushes it, CI publishes
-svu next           # dry-run: print the next version without releasing
+mise run release-preview   # what the next merge to main would release (no side effects)
 ```
 
 ## Usage

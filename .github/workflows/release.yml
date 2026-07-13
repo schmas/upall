@@ -1,17 +1,51 @@
 name: release
 
+# Auto-release on merge to main. The `version` job computes the next semver from
+# conventional commits (svu); if nothing releasable landed since the last tag it
+# skips. Otherwise smoke-test → goreleaser publish → push the tag — all in ONE run,
+# so no PAT is needed (there is no tag-push trigger to recurse into).
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.svu.outputs.release }}
+      version: ${{ steps.svu.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v2 # installs svu (+ go, goreleaser) pinned in mise.toml
+      - id: svu
+        name: Compute next version from conventional commits
+        run: |
+          set -euo pipefail
+          current="$(svu current)"
+          next="$(svu next)"
+          echo "current=${current} next=${next}"
+          if [ "${next}" = "${current}" ]; then
+            echo "No releasable commits since ${current}; skipping release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "version=${next}" >> "$GITHUB_OUTPUT"
+          fi
+
   # Auto-latest install means a broken release reaches every machine, so each
   # cross-compiled artifact is smoke-tested before the release is published.
   smoke:
+    needs: version
+    if: needs.version.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,7 +73,8 @@ jobs:
             sh -c '/d/upall_linux_arm64 --version && /d/upall_linux_arm64 --list'
 
   release:
-    needs: smoke
+    needs: [version, smoke]
+    if: needs.version.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,9 +83,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+      - name: Tag ${{ needs.version.outputs.version }}
+        run: git tag "${{ needs.version.outputs.version }}"
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean # reads the tag created above
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push the tag (record it so the next svu computation sees it)
+        run: git push origin "${{ needs.version.outputs.version }}"
