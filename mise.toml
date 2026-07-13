@@ -3,3 +3,19 @@
 [tools]
 go = "1.26.5"       # matches the `go` directive in go.mod
 goreleaser = "2"    # release tooling; CI uses goreleaser-action "~> v2"
+svu = "3"           # semantic-version util: next tag from conventional commits
+
+# Cut a release: svu reads conventional commits, computes the next semver, tags
+# HEAD, and pushes the tag — which triggers .github/workflows/release.yml (smoke
+# test + goreleaser publish). Run from a clean, pushed `main`.
+#   feat: -> minor   fix: -> patch   feat!:/BREAKING CHANGE -> major
+[tasks.release]
+description = "Tag + push next semver (from conventional commits) to trigger the release workflow"
+run = '''
+set -euo pipefail
+next="$(svu next)"
+echo "Releasing ${next} (current: $(svu current))"
+git tag "${next}"
+git push origin "${next}"
+echo "Pushed ${next}; release.yml will smoke-test then publish."
+'''

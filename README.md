@@ -36,6 +36,15 @@ The dotfiles repo pulls the latest release binary through `.chezmoiexternal.toml
 go install github.com/schmas/upall/cmd/upall@latest
 ```
 
+### Releasing (maintainer)
+
+Versions are derived from [conventional commits](https://www.conventionalcommits.org/) — `feat:` bumps minor, `fix:` bumps patch, `feat!:`/`BREAKING CHANGE:` bumps major. From a clean, pushed `main`:
+
+```sh
+mise run release   # svu computes the next tag, pushes it, CI publishes
+svu next           # dry-run: print the next version without releasing
+```
+
 ## Usage
 
 ```
