@@ -17,6 +17,9 @@ func TestDefaults(t *testing.T) {
 	if !d.Notify.Enabled {
 		t.Error("notify should default enabled")
 	}
+	if d.Run.Shell != "bash" {
+		t.Errorf("run.shell = %q, want bash", d.Run.Shell)
+	}
 	// Every known action has a default binding.
 	for _, a := range knownActions {
 		if len(d.Keys[a]) == 0 {
@@ -25,6 +28,9 @@ func TestDefaults(t *testing.T) {
 	}
 	if got := d.Keys["quit"]; len(got) != 2 || got[0] != "q" {
 		t.Errorf("quit binding = %v, want [q ctrl+c]", got)
+	}
+	if got := d.Keys["stop"]; len(got) != 1 || got[0] != "x" {
+		t.Errorf("stop binding = %v, want [x]", got)
 	}
 }
 

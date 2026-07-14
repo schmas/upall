@@ -15,6 +15,7 @@ type Settings struct {
 	History History
 	UI      UI
 	Notify  Notify
+	Run     Run
 }
 
 // Theme holds the TUI's configurable colors. Each is a Lip Gloss color string:
@@ -48,13 +49,20 @@ type Notify struct {
 	Enabled bool
 }
 
+// Run holds run-execution behavior. Shell is the default shell for steps that
+// do not set their own; a per-step shell wins, and the engine still falls back
+// to bash→sh when the configured shell is not on PATH.
+type Run struct {
+	Shell string // default shell for steps without an explicit shell
+}
+
 // knownActions is the closed set of rebindable actions. The user's [keys]
 // table is validated against it (an unknown action is a config error) and
 // Defaults() supplies a binding for every entry. The TUI (phase 2) turns this
 // map into key.Bindings.
 var knownActions = []string{
 	"up", "down", "top", "bottom",
-	"start", "follow", "all-logs", "retry", "restart", "pager", "quit",
+	"start", "follow", "all-logs", "retry", "restart", "pager", "stop", "quit",
 	"focus-next", "focus-prev",
 	"filter-next", "filter-prev", "toggle",
 	"expand", "collapse", "wrap",
@@ -85,6 +93,7 @@ func defaultKeys() map[string][]string {
 		"retry":           {"r"},
 		"restart":         {"R"},
 		"pager":           {"l"},
+		"stop":            {"x"},
 		"quit":            {"q", "ctrl+c"},
 		"focus-next":      {"tab"},
 		"focus-prev":      {"shift+tab"},
@@ -119,5 +128,6 @@ func Defaults() Settings {
 			Pager:         "",
 		},
 		Notify: Notify{Enabled: true},
+		Run:    Run{Shell: "bash"},
 	}
 }

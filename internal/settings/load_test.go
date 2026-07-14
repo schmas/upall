@@ -71,6 +71,24 @@ func TestParseKeyRebind(t *testing.T) {
 	}
 }
 
+func TestParseRunShellOverride(t *testing.T) {
+	s, err := parse("config.toml", []byte("schema = 1\n[run]\nshell = \"fish\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Run.Shell != "fish" {
+		t.Errorf("run.shell = %q, want fish", s.Run.Shell)
+	}
+	// Unset run.shell keeps the default.
+	s, err = parse("config.toml", []byte("schema = 1\n[ui]\nwrap = false\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Run.Shell != "bash" {
+		t.Errorf("unset run.shell = %q, want default bash", s.Run.Shell)
+	}
+}
+
 func TestParseHistoryDirExpandsHome(t *testing.T) {
 	s, err := parse("config.toml", []byte("schema = 1\n[history]\ndir = \"~/runs\"\n"))
 	if err != nil {
@@ -189,7 +207,7 @@ func TestInitConfigWritesAndRefuses(t *testing.T) {
 		t.Fatalf("file not written: %v", err)
 	}
 	// All five sections documented.
-	for _, sec := range []string{"[keys]", "[theme]", "[history]", "[ui]", "[notify]"} {
+	for _, sec := range []string{"[keys]", "[theme]", "[history]", "[ui]", "[notify]", "[run]"} {
 		if !strings.Contains(string(data), sec) {
 			t.Errorf("template missing section %q", sec)
 		}

@@ -17,6 +17,7 @@ type styles struct {
 
 	selected         lipgloss.Style // active filter tab / All-logs label, progress fill
 	cursor           lipgloss.Style // the list-cursor row: a solid reverse-video bar
+	keycap           lipgloss.Style // footer keybinding: the key in bold accent (no box)
 	muted            lipgloss.Style // dimmed / secondary text
 	sep              lipgloss.Style // separators (── label ──)
 	header           lipgloss.Style // header title text
@@ -37,7 +38,11 @@ func buildStyles(t settings.Theme) styles {
 		// The list cursor is a reverse-video bar (accent becomes the background)
 		// rather than accent-colored text: a green-on-green foreground was
 		// invisible against the green ✓ glyphs and labels in the History pane.
-		cursor:   lipgloss.NewStyle().Bold(true).Reverse(true).Foreground(accent),
+		cursor: lipgloss.NewStyle().Bold(true).Reverse(true).Foreground(accent),
+		// Footer keycap: the key in bold accent, no box — it reads as distinct from
+		// its muted description without the heavy filled block a reverse cap draws
+		// (matches the lazygit-style footer this TUI takes after).
+		keycap:   lipgloss.NewStyle().Foreground(accent).Bold(true),
 		muted:    lipgloss.NewStyle().Foreground(dim),
 		sep:      lipgloss.NewStyle().Foreground(dim),
 		header:   lipgloss.NewStyle().Bold(true),
