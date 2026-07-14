@@ -127,12 +127,13 @@ type runControl struct {
 // Model is the Bubble Tea model. It is used as a pointer, so Update mutates in
 // place and only the update loop ever writes these fields.
 type Model struct {
-	rc     *runControl
-	steps  []engine.Step
-	root   string            // run-log root; history is browsed here and new runs written under it
-	keep   int               // run-log dirs to retain when a run creates a new one
-	runDir string            // the current run's dir; "" until the first run actually starts
-	set    settings.Settings // user config; drives keys/theme/behavior (phase 2+)
+	rc      *runControl
+	steps   []engine.Step
+	root    string            // run-log root; history is browsed here and new runs written under it
+	keep    int               // run-log dirs to retain when a run creates a new one
+	runDir  string            // the current run's dir; "" until the first run actually starts
+	set     settings.Settings // user config; drives keys/theme/behavior (phase 2+)
+	version string            // build version, shown in the header; "dev" outside a release build
 
 	terms  []*vt.Emulator
 	states []engine.State
@@ -184,7 +185,7 @@ type Model struct {
 // New builds the model. rc.runner/launch are wired by Run after the program is
 // created. root is the run-log root browsed by History; the current run's dir is
 // created lazily on the first run so merely opening upall records nothing.
-func New(steps []engine.Step, root string, keep int, rc *runControl, set settings.Settings) *Model {
+func New(steps []engine.Step, root string, keep int, rc *runControl, set settings.Settings, version string) *Model {
 	n := len(steps)
 	m := &Model{
 		rc:        rc,
@@ -192,6 +193,7 @@ func New(steps []engine.Step, root string, keep int, rc *runControl, set setting
 		root:      root,
 		keep:      keep,
 		set:       set,
+		version:   version,
 		terms:     make([]*vt.Emulator, n),
 		states:    make([]engine.State, n),
 		durs:      make([]engine.Result, n),

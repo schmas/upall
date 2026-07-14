@@ -25,7 +25,7 @@ func TestStopCancelsCurrentRunNotSession(t *testing.T) {
 		steps:     demoSteps(),
 		launch:    func(func()) {},
 	}
-	m := New(demoSteps(), "", 0, rc, settings.Defaults())
+	m := New(demoSteps(), "", 0, rc, settings.Defaults(), "test")
 	m.running = true
 
 	m.stop()
@@ -48,7 +48,7 @@ func TestStopIsNoopWhenIdle(t *testing.T) {
 		steps:     demoSteps(),
 		launch:    func(func()) {},
 	}
-	m := New(demoSteps(), "", 0, rc, settings.Defaults())
+	m := New(demoSteps(), "", 0, rc, settings.Defaults(), "test")
 	m.running = false
 
 	m.stop()

@@ -66,7 +66,7 @@ func (m *Model) renderHeaderBar() string {
 	if m.running {
 		state = "running"
 	}
-	right := fmt.Sprintf("%d/%d %s %3d%% %s", done, total, m.progressBar(barWidth), pct, state)
+	right := fmt.Sprintf("%d/%d %s %3d%% %s  %s", done, total, m.progressBar(barWidth), pct, state, m.st.muted.Render(m.version))
 
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

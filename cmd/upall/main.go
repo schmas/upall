@@ -84,13 +84,13 @@ func main() {
 		fail(errors.New("no matching steps to run"))
 	}
 
-	os.Exit(run(steps, o.plain, set))
+	os.Exit(run(steps, o.plain, set, version))
 }
 
 // run executes steps and returns the process exit code (the number of failed
 // steps). It renders the TUI on an interactive terminal, or plain streaming for
 // --plain / NO_COLOR / a non-TTY stdout.
-func run(steps []engine.Step, plainFlag bool, set settings.Settings) int {
+func run(steps []engine.Step, plainFlag bool, set settings.Settings, version string) int {
 	stdoutTTY := term.IsTerminal(int(os.Stdout.Fd()))
 	stdinTTY := term.IsTerminal(int(os.Stdin.Fd()))
 	useTUI := stdoutTTY && !plainFlag && os.Getenv("NO_COLOR") == ""
@@ -117,7 +117,7 @@ func run(steps []engine.Step, plainFlag bool, set settings.Settings) int {
 	if useTUI {
 		// The TUI creates its run dir lazily, on the first run, so merely opening
 		// the dashboard records nothing and never rotates real history.
-		failed, err := tui.Run(steps, root, keep, set)
+		failed, err := tui.Run(steps, root, keep, set, version)
 		if err != nil {
 			fail(err)
 		}
@@ -133,7 +133,7 @@ func run(steps []engine.Step, plainFlag bool, set settings.Settings) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	sink := plain.New(steps, os.Stdout, false, runDir, set.Notify.Enabled)
-	sink.Begin("upall")
+	sink.Begin(fmt.Sprintf("upall %s", version))
 	runner := engine.NewRunner(runDir, sink)
 	runner.DefaultShell = set.Run.Shell
 	runner.RunAll(ctx, steps)

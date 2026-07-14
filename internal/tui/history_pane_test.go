@@ -61,7 +61,7 @@ func historyModel(t *testing.T) (*Model, string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	rc := &runControl{ctx: ctx, cancel: cancel, runner: engine.NewRunner("", nil), steps: demoSteps(), launch: func(func()) {}}
-	m := New(demoSteps(), root, 0, rc, settings.Defaults())
+	m := New(demoSteps(), root, 0, rc, settings.Defaults(), "test")
 	sizeUp(m)
 	m.focus = FocusHistory
 	return m, root
@@ -317,7 +317,7 @@ func TestHistoryCapTruncates(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	rc := &runControl{ctx: ctx, cancel: cancel, runner: engine.NewRunner("", nil), steps: demoSteps(), launch: func(func()) {}}
-	m := New(demoSteps(), root, 0, rc, settings.Defaults())
+	m := New(demoSteps(), root, 0, rc, settings.Defaults(), "test")
 	sizeUp(m)
 
 	m.out = outSel{kind: outHistStep, run: 0, step: 0}

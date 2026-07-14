@@ -26,7 +26,7 @@ func testModel(steps []engine.Step) (*Model, *int, *bool) {
 		steps:  steps,
 		launch: func(func()) { launched++ },
 	}
-	return New(steps, "", 0, rc, settings.Defaults()), &launched, &canceled
+	return New(steps, "", 0, rc, settings.Defaults(), "test"), &launched, &canceled
 }
 
 func demoSteps() []engine.Step {
@@ -236,7 +236,7 @@ func runModelInRoot(t *testing.T, root string) *Model {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	rc := &runControl{ctx: ctx, cancel: cancel, runner: engine.NewRunner("", nil), steps: demoSteps(), launch: func(func()) {}}
-	m := New(demoSteps(), root, 5, rc, settings.Defaults())
+	m := New(demoSteps(), root, 5, rc, settings.Defaults(), "test")
 	sizeUp(m)
 	return m
 }
@@ -366,7 +366,7 @@ func TestKeysBuiltFromSettings(t *testing.T) {
 		steps:  demoSteps(),
 		launch: func(func()) {},
 	}
-	m := New(demoSteps(), "", 0, rc, set)
+	m := New(demoSteps(), "", 0, rc, set, "test")
 	sizeUp(m)
 
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})

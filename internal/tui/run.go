@@ -21,10 +21,10 @@ const reapTimeout = 5 * time.Second
 // Run drives the full TUI session over steps and returns the failed-step count.
 // On quit it leaves the alt screen and prints the summary to the normal buffer,
 // preserving it in scrollback.
-func Run(steps []engine.Step, root string, keep int, set settings.Settings) (int, error) {
+func Run(steps []engine.Step, root string, keep int, set settings.Settings, version string) (int, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	rc := &runControl{ctx: ctx, cancel: cancel, steps: steps}
-	m := New(steps, root, keep, rc, set)
+	m := New(steps, root, keep, rc, set, version)
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	sink := NewSink(p)

@@ -16,7 +16,7 @@ import (
 func modelWithSettings(set settings.Settings) *Model {
 	ctx, cancel := context.WithCancel(context.Background())
 	rc := &runControl{ctx: ctx, cancel: cancel, runner: engine.NewRunner("", nil), steps: demoSteps(), launch: func(func()) {}}
-	return New(demoSteps(), "", 0, rc, set)
+	return New(demoSteps(), "", 0, rc, set, "test")
 }
 
 // TestNarrowLayoutNoOverflow proves the three stacked panes always sum to the
