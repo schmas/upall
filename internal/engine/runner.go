@@ -15,7 +15,11 @@ import (
 // more than one runner goroutine touching a pty at once.
 type Runner struct {
 	RunDir string // per-step logs go here; "" disables file teeing (tests)
-	sink   Sink
+	// DefaultShell is the configured fallback shell for steps without their own
+	// shell. Empty ("") means "unset" and behaves exactly like the pre-config
+	// default (defaultShell(): bash→sh). See resolveShell.
+	DefaultShell string
+	sink         Sink
 
 	mu     sync.Mutex
 	size   ptySize
@@ -108,10 +112,7 @@ func (r *Runner) runStep(ctx context.Context, steps []Step, i int) {
 // fails (mirrors v2's `cmd || rc=1` chaining); the step fails if any command
 // fails. It stops early only on timeout or quit.
 func (r *Runner) execStep(parent, sctx context.Context, st Step, i int, teeW io.Writer) Result {
-	shell := st.Shell
-	if shell == "" {
-		shell = defaultShell()
-	}
+	shell := resolveShell(st.Shell, r.DefaultShell)
 	env := buildEnv(st.Env)
 	overallRC := 0
 	for _, cmdline := range st.Run {

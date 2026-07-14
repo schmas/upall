@@ -134,7 +134,9 @@ func run(steps []engine.Step, plainFlag bool, set settings.Settings) int {
 	defer stop()
 	sink := plain.New(steps, os.Stdout, false, runDir, set.Notify.Enabled)
 	sink.Begin("upall")
-	engine.NewRunner(runDir, sink).RunAll(ctx, steps)
+	runner := engine.NewRunner(runDir, sink)
+	runner.DefaultShell = set.Run.Shell
+	runner.RunAll(ctx, steps)
 	return sink.End("upall")
 }
 

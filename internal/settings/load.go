@@ -25,6 +25,7 @@ type fileConfig struct {
 	History historyTOML         `toml:"history"`
 	UI      uiTOML              `toml:"ui"`
 	Notify  notifyTOML          `toml:"notify"`
+	Run     runTOML             `toml:"run"`
 }
 
 type themeTOML struct {
@@ -49,6 +50,10 @@ type uiTOML struct {
 
 type notifyTOML struct {
 	Enabled *bool `toml:"enabled"`
+}
+
+type runTOML struct {
+	Shell *string `toml:"shell"`
 }
 
 // ConfigPath is the resolved config file path
@@ -126,6 +131,8 @@ func parse(name string, data []byte) (Settings, error) {
 	setStr(&s.UI.Pager, fc.UI.Pager)
 
 	setBool(&s.Notify.Enabled, fc.Notify.Enabled)
+
+	setStr(&s.Run.Shell, fc.Run.Shell)
 
 	return s, nil
 }

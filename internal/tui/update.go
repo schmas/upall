@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -132,6 +133,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.rc.cancel()
 		return m, tea.Quit
+	case key.Matches(msg, m.keys.Stop):
+		m.stop()
+		return m, nil
 	case key.Matches(msg, m.keys.Help):
 		m.showHelp = !m.showHelp
 		return m, nil
@@ -504,14 +508,18 @@ func (m *Model) forwardToViewport(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // retry re-runs the selected step, but ONLY when no run is active and the step
-// terminally failed. This guard is the run-state machine that prevents a
-// RunOne/RunAll race on shared state.
+// ended non-OK — failed (non-zero/timeout) or aborted (stopped mid-run). This
+// guard is the run-state machine that prevents a RunOne/RunAll race on shared
+// state.
 func (m *Model) retry() tea.Cmd {
 	if m.running || !m.isLiveStep() {
 		return nil
 	}
 	i := m.out.step
-	if i < 0 || i >= len(m.steps) || m.states[i] != engine.StateFailed {
+	if i < 0 || i >= len(m.steps) {
+		return nil
+	}
+	if m.states[i] != engine.StateFailed && m.states[i] != engine.StateAborted {
 		return nil
 	}
 	resetTerm(m.terms[i])
@@ -526,7 +534,7 @@ func (m *Model) retry() tea.Cmd {
 	m.rebuildContent()
 	// launch synchronously (on the update goroutine) so wg.Add happens-before
 	// any subsequent quit reap; only the runner itself is a goroutine.
-	m.rc.launch(func() { m.rc.runner.RunOne(m.rc.ctx, m.rc.steps, i) })
+	m.launchRun(func(ctx context.Context) { m.rc.runner.RunOne(ctx, m.rc.steps, i) })
 	return nil
 }
 
@@ -554,8 +562,22 @@ func (m *Model) restartAll() tea.Cmd {
 	m.totalEnd = time.Time{}
 	m.refreshHistory() // hide the current run while it re-runs
 	m.rebuildContent()
-	m.rc.launch(func() { m.rc.runner.RunAll(m.rc.ctx, m.rc.steps) })
+	m.launchRun(func(ctx context.Context) { m.rc.runner.RunAll(ctx, m.rc.steps) })
 	return nil
+}
+
+// stop cancels the current run's child context (leaving the session context
+// alive so retry/re-run still work) and lets the runner reap its child via the
+// existing SIGTERM→SIGKILL path. It is a no-op when no run is active. It does
+// NOT flip m.running — RunDoneMsg does that when the runner goroutine returns,
+// which keeps a retry/re-run from launching a second runner mid-reap. The active
+// step is reported aborted through the normal doneMsg path (unlike quit, which
+// must mark it manually because it exits before that message is processed).
+func (m *Model) stop() {
+	if !m.running || m.rc.runCancel == nil {
+		return
+	}
+	m.rc.runCancel()
 }
 
 // resize recomputes the three pane rectangles, the viewport size, and every

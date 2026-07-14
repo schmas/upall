@@ -88,6 +88,7 @@ key below is rebindable via `[keys]` in `config.toml`.
 | `l` | Open the selected log in the pager | Steps / History |
 | `c` / `C` | Open `config.toml` / the config folder | any |
 | `?` | Toggle the full-key footer | any |
+| `x` | Stop the current run and stay in the TUI (no-op when idle) | any |
 | `q` / `ctrl-c` | Quit (cancels a running step) | any |
 
 The Steps filter tabs are **view-only** — they never change what runs.
@@ -133,11 +134,24 @@ pager          = ""          # pager command; empty = $PAGER, then "less -R"
 
 [notify]
 enabled = true               # desktop notification on a failed run
+
+[run]
+shell = "bash"               # default shell for steps without their own `shell`
 ```
 
+The step shell resolves as `step.shell` › `[run] shell` (default `bash`) ›
+built-in fallback (`bash` if present, else `sh`). The configured shell is used
+only when it is on `PATH`, so the `bash` default still degrades to `sh` on a
+host without bash; a per-step `shell` is used verbatim.
+
 Rebindable actions: `up, down, top, bottom, start, follow, all-logs, retry,
-restart, pager, quit, focus-next, focus-prev, filter-next, filter-prev, toggle,
-expand, collapse, wrap, open-config, open-config-dir`.
+restart, pager, stop, quit, focus-next, focus-prev, filter-next, filter-prev,
+toggle, expand, collapse, wrap, open-config, open-config-dir`.
+
+`stop` (default `x`) cancels the active run and leaves the TUI open: the running
+step is marked aborted, steps that had not started stay pending, and the header
+goes idle. Unlike `quit` it does not exit, so `r` (retry) and `R` (re-run) still
+work afterwards. It is a no-op when no run is active.
 
 ## Configuring steps
 

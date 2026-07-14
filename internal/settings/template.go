@@ -23,7 +23,7 @@ schema = 1
 
 # [keys] rebinds any action to a list of keys (replaces that action's default
 # list). Known actions: up, down, top, bottom, start, follow, all-logs, retry,
-# restart, pager, quit, focus-next, focus-prev, filter-next, filter-prev,
+# restart, pager, stop, quit, focus-next, focus-prev, filter-next, filter-prev,
 # toggle, expand, collapse, wrap, open-config, open-config-dir.
 # [keys]
 # up          = ["up", "k"]
@@ -36,6 +36,7 @@ schema = 1
 # retry       = ["r"]
 # restart     = ["R"]
 # pager       = ["l"]
+# stop        = ["x"]
 # quit        = ["q", "ctrl+c"]
 # focus-next  = ["tab"]
 # focus-prev  = ["shift+tab"]
@@ -72,6 +73,12 @@ schema = 1
 # [notify] desktop notification on a failed run.
 # [notify]
 # enabled = true
+
+# [run] default shell for steps that do not set their own "shell". A per-step
+# shell wins; the configured shell is used when present on PATH, else upall
+# falls back to bash (or sh when bash is absent).
+# [run]
+# shell = "bash"
 `
 }
 

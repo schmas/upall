@@ -84,3 +84,21 @@ func defaultShell() string {
 	}
 	return "sh"
 }
+
+// resolveShell applies the shell precedence for a step: an explicit per-step
+// shell wins verbatim (a bad value fails loud, as before); otherwise the
+// configured default is used when present on PATH; otherwise defaultShell()
+// (bash→sh). The config default is availability-checked so the documented
+// "bash" default still degrades to sh on a host without bash — matching the
+// pre-config behavior when nothing is set.
+func resolveShell(stepShell, configShell string) string {
+	if stepShell != "" {
+		return stepShell
+	}
+	if configShell != "" {
+		if _, err := exec.LookPath(configShell); err == nil {
+			return configShell
+		}
+	}
+	return defaultShell()
+}

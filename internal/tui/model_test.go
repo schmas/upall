@@ -199,12 +199,33 @@ func TestDashboardRendersOnLaunchAndStartsOnConfirm(t *testing.T) {
 func TestPreRunFooterShowsToggleHint(t *testing.T) {
 	m, _, _ := testModel(demoSteps())
 	sizeUp(m)
-	if foot := ansi.Strip(m.renderFooterBar()); !strings.Contains(foot, "space toggle") {
+	if foot := footerText(m); !strings.Contains(foot, "space toggle") {
 		t.Errorf("pre-run footer should show the space toggle hint, got %q", foot)
 	}
 	startRunning(m)
-	if foot := ansi.Strip(m.renderFooterBar()); strings.Contains(foot, "space toggle") {
+	if foot := footerText(m); strings.Contains(foot, "space toggle") {
 		t.Errorf("started footer should drop the toggle hint, got %q", foot)
+	}
+}
+
+// footerText strips ANSI and collapses whitespace so tests can assert on the
+// "key label" pairs without depending on keycap padding.
+func footerText(m *Model) string {
+	return strings.Join(strings.Fields(ansi.Strip(m.renderFooterBar())), " ")
+}
+
+// TestRunningFooterShowsStopHint proves the stop key is advertised in the footer
+// while a run is active (discoverable from any pane) and hidden when idle, since
+// stop is a no-op with no run running.
+func TestRunningFooterShowsStopHint(t *testing.T) {
+	m, _, _ := testModel(demoSteps())
+	sizeUp(m)
+	if foot := footerText(m); strings.Contains(foot, "x stop") {
+		t.Errorf("idle footer should not show the stop hint, got %q", foot)
+	}
+	startRunning(m)
+	if foot := footerText(m); !strings.Contains(foot, "x stop") {
+		t.Errorf("running footer should show the stop hint, got %q", foot)
 	}
 }
 

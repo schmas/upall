@@ -207,29 +207,62 @@ func (m *Model) historySourceLabel() string {
 	return "History · " + run.Label + " (all)"
 }
 
-// renderFooterBar is one line of hints tailored to the focused pane.
-func (m *Model) renderFooterBar() string {
-	var hint string
-	switch m.focus {
-	case FocusOutput:
-		hint = "↑/↓ scroll · g/G top/bottom · w wrap · l pager · tab pane · q quit"
-	case FocusHistory:
-		hint = "↑/↓ move · ⏎/→ expand · ← collapse · w wrap · l pager · tab pane · q quit"
-	default: // FocusSteps
-		if m.started {
-			hint = "↑/↓ move · ⏎ follow · a all · r retry · R re-run · l pager · c config · tab pane · q quit"
-		} else {
-			hint = "⏎ start · ↑/↓ move · space toggle · c config · tab pane · q quit"
+// footerHint pairs a keycap with the action it triggers, rendered in the footer
+// as a boxed key followed by a muted description.
+type footerHint struct {
+	key, label string
+}
+
+// footerHints returns the key hints for the current focus / run state, listing
+// only actions actually available in that context. The full `?` help lists all.
+func (m *Model) footerHints() []footerHint {
+	if m.showHelp {
+		return []footerHint{
+			{"tab", "pane"}, {"↑/↓", "move"}, {"⏎", "start/follow"}, {"a", "all"},
+			{"r", "retry"}, {"R", "re-run"}, {"x", "stop"}, {"w", "wrap"},
+			{"l", "pager"}, {"g/G", "top/bottom"}, {"c", "config"}, {"C", "config dir"},
+			{"?", "help"}, {"q", "quit"},
 		}
 	}
-	if m.showHelp {
-		hint = "tab/⇧tab pane · ↑/↓ move · ⏎ start/follow · a all · r retry · R re-run · w wrap · l pager · g/G top/bottom · c config · C config dir · q quit · ? help"
+	var hints []footerHint
+	switch m.focus {
+	case FocusOutput:
+		hints = []footerHint{{"↑/↓", "scroll"}, {"g/G", "top/bottom"}, {"w", "wrap"}, {"l", "pager"}, {"tab", "pane"}, {"q", "quit"}}
+	case FocusHistory:
+		hints = []footerHint{{"↑/↓", "move"}, {"⏎/→", "expand"}, {"←", "collapse"}, {"w", "wrap"}, {"l", "pager"}, {"tab", "pane"}, {"q", "quit"}}
+	default: // FocusSteps
+		if m.started {
+			hints = []footerHint{{"↑/↓", "move"}, {"⏎", "follow"}, {"a", "all"}, {"r", "retry"}, {"R", "re-run"}, {"l", "pager"}, {"c", "config"}, {"tab", "pane"}, {"q", "quit"}}
+		} else {
+			hints = []footerHint{{"⏎", "start"}, {"↑/↓", "move"}, {"space", "toggle"}, {"c", "config"}, {"tab", "pane"}, {"q", "quit"}}
+		}
+	}
+	// stop is a global action but only meaningful while a run is active; surface it
+	// first in every pane's footer during a run so it stays discoverable whatever
+	// pane is focused (the user is usually watching Output as a run streams).
+	if m.running {
+		hints = append([]footerHint{{"x", "stop"}}, hints...)
+	}
+	return hints
+}
+
+// renderFooterBar renders the context hints as boxed keycaps + muted labels on a
+// single line, truncated (ANSI-aware) to the terminal width.
+func (m *Model) renderFooterBar() string {
+	var b strings.Builder
+	for i, h := range m.footerHints() {
+		if i > 0 {
+			b.WriteString("  ")
+		}
+		b.WriteString(m.st.keycap.Render(h.key))
+		b.WriteByte(' ')
+		b.WriteString(m.st.muted.Render(h.label))
 	}
 	w := m.width - 2
 	if w < 1 {
 		w = 1
 	}
-	return m.st.muted.Render(" " + ansi.Truncate(hint, w, "…"))
+	return " " + ansi.Truncate(b.String(), w, "…")
 }
 
 // glyph returns a step/run status marker colored by the theme: success/failure

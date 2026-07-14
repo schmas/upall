@@ -31,6 +31,7 @@ func Run(steps []engine.Step, root string, keep int, set settings.Settings) (int
 	// The run dir is created lazily on the first run (m.ensureRunDir), so the
 	// runner starts with no dir; the model points it at the dir once a run begins.
 	rc.runner = engine.NewRunner("", sink)
+	rc.runner.DefaultShell = set.Run.Shell
 	rc.launch = func(fn func()) {
 		rc.wg.Add(1)
 		go func() {

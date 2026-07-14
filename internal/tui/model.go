@@ -115,10 +115,13 @@ type histRow struct {
 type runControl struct {
 	ctx    context.Context
 	cancel context.CancelFunc
-	runner *engine.Runner
-	steps  []engine.Step
-	launch func(func()) // spawn a runner goroutine; sends RunDoneMsg when it returns
-	wg     sync.WaitGroup
+	// runCancel cancels only the CURRENT run (the stop key), leaving ctx alive so
+	// retry/re-run still work. Set by launchRun; nil when no run has launched.
+	runCancel context.CancelFunc
+	runner    *engine.Runner
+	steps     []engine.Step
+	launch    func(func()) // spawn a runner goroutine; sends RunDoneMsg when it returns
+	wg        sync.WaitGroup
 }
 
 // Model is the Bubble Tea model. It is used as a pointer, so Update mutates in
@@ -250,7 +253,22 @@ func (m *Model) begin() {
 	m.totalStart = time.Now()
 	m.totalEnd = time.Time{}
 	m.refreshHistory()
-	m.rc.launch(func() { m.rc.runner.RunAll(m.rc.ctx, m.rc.steps) })
+	m.launchRun(func(ctx context.Context) { m.rc.runner.RunAll(ctx, m.rc.steps) })
+}
+
+// launchRun starts a runner on a per-run child of the session context and
+// records that child's cancel on runControl, so the stop key can cancel just
+// this run without touching the session context (retry/re-run stay possible).
+// Called synchronously on the update goroutine, like the launch sites it wraps,
+// so its wg.Add happens-before any later quit reap. The deferred cancel releases
+// the child context when the run ends normally (no leak / vet lostcancel).
+func (m *Model) launchRun(run func(context.Context)) {
+	runCtx, runCancel := context.WithCancel(m.rc.ctx)
+	m.rc.runCancel = runCancel
+	m.rc.launch(func() {
+		defer runCancel()
+		run(runCtx)
+	})
 }
 
 // ensureRunDir creates the run's log directory on the first run and points the
