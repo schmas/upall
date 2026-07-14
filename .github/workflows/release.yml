@@ -67,10 +67,19 @@ jobs:
           ./dist/upall_linux_amd64 --version
           ./dist/upall_linux_amd64 --list
       - name: Smoke-test linux/arm64 (qemu)
+        # Retries: Docker Hub occasionally 502s on the image pull (registry flakiness,
+        # not our code) — retry a few times with backoff before failing the job.
         run: |
           set -euxo pipefail
-          docker run --rm --platform linux/arm64 -v "$PWD/dist":/d arm64v8/alpine:3 \
-            sh -c '/d/upall_linux_arm64 --version && /d/upall_linux_arm64 --list'
+          for attempt in 1 2 3; do
+            if docker run --rm --platform linux/arm64 -v "$PWD/dist":/d arm64v8/alpine:3 \
+              sh -c '/d/upall_linux_arm64 --version && /d/upall_linux_arm64 --list'; then
+              exit 0
+            fi
+            echo "Attempt ${attempt} failed; retrying..." >&2
+            sleep $((attempt * 5))
+          done
+          exit 1
 
   release:
     needs: [version, smoke]
