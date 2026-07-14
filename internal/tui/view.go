@@ -66,7 +66,7 @@ func (m *Model) renderHeaderBar() string {
 	if m.running {
 		state = "running"
 	}
-	right := fmt.Sprintf("%d/%d %s %3d%% %s  %s", done, total, m.progressBar(barWidth), pct, state, m.st.muted.Render(m.version))
+	right := fmt.Sprintf("%d/%d %s %3d%% %s", done, total, m.progressBar(barWidth), pct, state)
 
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -246,8 +246,9 @@ func (m *Model) footerHints() []footerHint {
 	return hints
 }
 
-// renderFooterBar renders the context hints as boxed keycaps + muted labels on a
-// single line, truncated (ANSI-aware) to the terminal width.
+// renderFooterBar renders the context hints as boxed keycaps + muted labels on
+// the left and the build version on the far right, truncated (ANSI-aware) to
+// the terminal width. Hints take priority over the version under tight width.
 func (m *Model) renderFooterBar() string {
 	var b strings.Builder
 	for i, h := range m.footerHints() {
@@ -262,7 +263,7 @@ func (m *Model) renderFooterBar() string {
 	if w < 1 {
 		w = 1
 	}
-	return " " + ansi.Truncate(b.String(), w, "…")
+	return " " + padBetween(b.String(), m.st.muted.Render(m.version), w-1)
 }
 
 // glyph returns a step/run status marker colored by the theme: success/failure
