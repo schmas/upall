@@ -180,6 +180,9 @@ func (m *Model) outputTitleCount() (string, string) {
 		if m.out.step >= 0 && m.out.step < len(m.steps) {
 			title = "Output · " + m.steps[m.out.step].Label
 		}
+		if m.typing {
+			title = "● typing · " + title
+		}
 		sub = fmt.Sprintf("%dL", lines)
 	case outHistStep, outHistAll:
 		title = m.historySourceLabel()
@@ -218,10 +221,15 @@ type footerHint struct {
 // footerHints returns the key hints for the current focus / run state, listing
 // only actions actually available in that context. The full `?` help lists all.
 func (m *Model) footerHints() []footerHint {
+	// Type mode intercepts every key (see Update), so its own hints replace the
+	// normal set entirely — the usual navigation keys do not apply right now.
+	if m.typing {
+		return []footerHint{{"esc", "stop typing"}, {"⏎", "send"}}
+	}
 	if m.showHelp {
 		return []footerHint{
 			{"tab", "pane"}, {"↑/↓", "move"}, {"⏎", "start/follow"}, {"a", "all"},
-			{"r", "retry"}, {"u", "continue"}, {"R", "re-run"}, {"x", "stop"}, {"w", "wrap"},
+			{"r", "retry"}, {"u", "continue"}, {"R", "re-run"}, {"x", "stop"}, {"i", "type"}, {"w", "wrap"},
 			{"l", "pager"}, {"g/G", "top/bottom"}, {"c", "config"}, {"C", "config dir"},
 			{"?", "help"}, {"q", "quit"},
 		}
@@ -230,6 +238,9 @@ func (m *Model) footerHints() []footerHint {
 	switch m.focus {
 	case FocusOutput:
 		hints = []footerHint{{"↑/↓", "scroll"}, {"g/G", "top/bottom"}, {"w", "wrap"}, {"l", "pager"}, {"tab", "pane"}, {"q", "quit"}}
+		if m.canType() {
+			hints = append(hints, footerHint{"i", "type"})
+		}
 	case FocusHistory:
 		hints = []footerHint{{"↑/↓", "move"}, {"⏎/→", "expand"}, {"←", "collapse"}, {"w", "wrap"}, {"l", "pager"}, {"tab", "pane"}, {"q", "quit"}}
 	default: // FocusSteps

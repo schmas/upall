@@ -23,8 +23,9 @@ schema = 1
 
 # [keys] rebinds any action to a list of keys (replaces that action's default
 # list). Known actions: up, down, top, bottom, start, follow, all-logs, retry,
-# continue, restart, pager, stop, quit, focus-next, focus-prev, filter-next,
-# filter-prev, toggle, expand, collapse, wrap, open-config, open-config-dir.
+# continue, restart, pager, stop, type, quit, focus-next, focus-prev,
+# filter-next, filter-prev, toggle, expand, collapse, wrap, open-config,
+# open-config-dir.
 # [keys]
 # up          = ["up", "k"]
 # down        = ["down", "j"]
@@ -38,6 +39,7 @@ schema = 1
 # restart     = ["R"]
 # pager       = ["l"]
 # stop        = ["x"]
+# type        = ["i"]
 # quit        = ["q", "ctrl+c"]
 # focus-next  = ["tab"]
 # focus-prev  = ["shift+tab"]

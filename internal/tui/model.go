@@ -165,6 +165,7 @@ type Model struct {
 	follow     bool
 	running    bool
 	started    bool // false on the idle dashboard, before the run is confirmed
+	typing     bool // type mode: keystrokes forward to the active step's pty
 	dirty      bool // All-logs content needs a rebuild (throttled to the tick)
 	activeIdx  int
 	totalStart time.Time
@@ -225,7 +226,8 @@ func New(steps []engine.Step, root string, keep int, rc *runControl, set setting
 	// stream (device-attribute / cursor-position answers): those replies are
 	// written synchronously into an unbuffered pipe during Write, so without a
 	// reader a step that queries the terminal would deadlock the update loop.
-	// The child's stdin is /dev/null, so the replies are never needed. Emulators
+	// Those replies only ever loop back into this display emulator, never to the
+	// child (the child's real pty is drained separately by the runner). Emulators
 	// are reset in place (never closed/recreated), so these goroutines live for
 	// the program and the emulator's closed flag is never written — no race.
 	for i := range m.terms {
@@ -386,6 +388,13 @@ func (m *Model) isAllLogs() bool { return m.out.kind == outLiveAll }
 
 // isLiveStep reports whether the Output shows a single live step's emulator.
 func (m *Model) isLiveStep() bool { return m.out.kind == outLiveStep }
+
+// canType reports whether type mode can be entered: the Output pane must be
+// showing the live output of the step that is currently running, so keystrokes
+// have somewhere to go (e.g. an interactive sudo password).
+func (m *Model) canType() bool {
+	return m.running && m.isLiveStep() && m.out.step == m.activeIdx
+}
 
 // includedCount is the number of steps in the run set (M in the header N/M).
 func (m *Model) includedCount() int {

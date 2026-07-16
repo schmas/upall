@@ -22,12 +22,26 @@ func (s ptySize) or(def ptySize) ptySize {
 
 var defaultPTYSize = ptySize{Rows: 40, Cols: 120}
 
-// startPTY starts cmd with stdout+stderr wired to a fresh pty slave and stdin
-// wired to /dev/null, in its own process group. Returning the pty master lets
-// the caller read the child's colored output. stdin=/dev/null means any read
-// by the child gets EOF immediately rather than blocking on input the UI can
-// never provide; the process group (Setpgid) lets the caller kill the whole
-// subtree (shell + grandchildren) on timeout or quit.
+// startPTY starts cmd with stdin+stdout+stderr all wired to a fresh pty slave,
+// as its own session leader with that slave as the controlling terminal.
+// Returning the pty master lets the caller read the child's colored output
+// and write input back (e.g. the TUI's type mode feeding an interactive sudo
+// password). A live stdin means a child that reads without anyone typing
+// blocks rather than getting instant EOF; per-step Timeout and the TUI's stop
+// key are the safety nets. Setsid+Setctty (the same attr set creack/pty's own
+// pty.Start uses) make /dev/tty inside the child resolve to this captured
+// pty rather than upall's own terminal, so a direct-tty prompt like sudo's
+// surfaces in the Output pane. setsid() also makes the child's pgid equal its
+// pid, so killGroup's process-group kill still reaps the whole subtree.
+//
+// Trade-off: making the child a session leader means a step that intentionally
+// backgrounds a process past its own completion (`some-daemon &`) no longer
+// keeps that process's terminal alive the way a plain Setpgid child did — the
+// session (and its controlling terminal) goes away with the session leader, so
+// the backgrounded process loses the pty rather than lingering on it. See
+// TestBackgroundSlaveHolderDoesNotHang: it still proves the runner never
+// hangs, just via prompt session teardown now instead of the cancelreader
+// force-cancel fallback it originally guarded.
 func startPTY(cmd *exec.Cmd, size ptySize) (*os.File, error) {
 	ptmx, tty, err := pty.Open()
 	if err != nil {
@@ -36,30 +50,23 @@ func startPTY(cmd *exec.Cmd, size ptySize) (*os.File, error) {
 	sz := size.or(defaultPTYSize)
 	_ = pty.Setsize(ptmx, &pty.Winsize{Rows: sz.Rows, Cols: sz.Cols})
 
-	devnull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
-	if err != nil {
-		_ = ptmx.Close()
-		_ = tty.Close()
-		return nil, err
-	}
-	cmd.Stdin = devnull
+	cmd.Stdin = tty
 	cmd.Stdout = tty
 	cmd.Stderr = tty
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
-	cmd.SysProcAttr.Setpgid = true
+	cmd.SysProcAttr.Setsid = true
+	cmd.SysProcAttr.Setctty = true
 
 	if err := cmd.Start(); err != nil {
 		_ = ptmx.Close()
 		_ = tty.Close()
-		_ = devnull.Close()
 		return nil, err
 	}
 	// The child holds its own dup'd copies after Start; the parent keeps only
-	// the master for reading.
+	// the master for reading and writing.
 	_ = tty.Close()
-	_ = devnull.Close()
 	return ptmx, nil
 }
 
@@ -70,7 +77,7 @@ func setPTYSize(ptmx *os.File, size ptySize) {
 }
 
 // killGroup signals the child's whole process group: SIGTERM, then SIGKILL if
-// it does not exit within the grace window. Setpgid at start guarantees the
+// it does not exit within the grace window. Setsid at start guarantees the
 // group id equals the child pid.
 func killGroup(cmd *exec.Cmd) {
 	if cmd.Process == nil {

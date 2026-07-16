@@ -90,6 +90,8 @@ key below is rebindable via `[keys]` in `config.toml`.
 | `c` / `C` | Open `config.toml` / the config folder | any |
 | `?` | Toggle the full-key footer | any |
 | `x` | Stop the current run and stay in the TUI (no-op when idle) | any |
+| `i` | Type mode: forward keystrokes to the running step (e.g. a sudo password) | Output (running step) |
+| `esc` | Exit type mode back to normal navigation | Output (typing) |
 | `q` / `ctrl-c` | Quit (cancels a running step) | any |
 
 The Steps filter tabs are **view-only** — they never change what runs.
@@ -146,13 +148,22 @@ only when it is on `PATH`, so the `bash` default still degrades to `sh` on a
 host without bash; a per-step `shell` is used verbatim.
 
 Rebindable actions: `up, down, top, bottom, start, follow, all-logs, retry,
-continue, restart, pager, stop, quit, focus-next, focus-prev, filter-next,
+continue, restart, pager, stop, type, quit, focus-next, focus-prev, filter-next,
 filter-prev, toggle, expand, collapse, wrap, open-config, open-config-dir`.
 
 `stop` (default `x`) cancels the active run and leaves the TUI open: the running
 step is marked aborted, steps that had not started stay pending, and the header
 goes idle. Unlike `quit` it does not exit, so `r` (retry), `u` (continue), and
 `R` (re-run) still work afterwards. It is a no-op when no run is active.
+
+Every step's stdin is now a live pty, not `/dev/null`, so a step can prompt for
+input mid-run — the case that motivates this is a step whose `run` invokes
+`sudo` and needs an interactive password (e.g. on a remote host without a
+1Password/Touch-ID sudo integration): the prompt shows up in the Output pane
+like any other output. Focus Output on the running step and press `type`
+(default `i`) to forward keystrokes straight to it; type the password, `⏎` to
+send it, `esc` to leave type mode. A step nobody types into just blocks on that
+read — its `timeout` (or `stop`) is still the way out.
 
 ## Configuring steps
 

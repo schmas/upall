@@ -74,6 +74,40 @@ func TestRetryLaunchesThroughLoop(t *testing.T) {
 	}
 }
 
+// TestTypeModeForwardsThroughLoop drives type mode through the real event
+// loop: entering it must swallow even keys that are normally global (like
+// stop and quit), proving Update's typing branch runs before handleKey's
+// dispatch, not alongside it. The fake runner has no real process behind it,
+// so those keystrokes' WriteInput calls harmlessly fail — but that must not
+// exit type mode on its own (only Esc, or the run actually ending, does);
+// only after Esc does 'q' reach handleKey and quit.
+func TestTypeModeForwardsThroughLoop(t *testing.T) {
+	m, _ := integrationModel(t)
+	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(120, 40))
+
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})                     // confirm preview → RunAll launch
+	tm.Send(startMsg{0})                                        // step 0 running; follow puts Output on it
+	tm.Send(tea.KeyMsg{Type: tea.KeyTab})                       // Steps → History
+	tm.Send(tea.KeyMsg{Type: tea.KeyTab})                       // History → Output
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")}) // enter type mode
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")}) // normally "stop" — must be swallowed
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}) // normally "quit" — must be swallowed too
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc})                       // exit type mode
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}) // now this actually quits
+
+	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+	fm, ok := tm.FinalModel(t).(*Model)
+	if !ok {
+		t.Fatal("no final model")
+	}
+	if !fm.running {
+		t.Error("'x' while typing should have been forwarded as input, not treated as stop")
+	}
+	if !fm.quitting {
+		t.Error("program should have quit only on the 'q' after Esc, not the one swallowed while typing")
+	}
+}
+
 // TestContinueLaunchesThroughLoop simulates stop cutting a run short (step 0
 // aborted mid-flight, step 1 never started) and drives a real 'u' keypress
 // through the event loop, proving continue resumes the interrupted suffix.

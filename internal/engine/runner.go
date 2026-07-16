@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +10,10 @@ import (
 	"sync"
 	"time"
 )
+
+// ErrNoActiveStep is returned by WriteInput when no step is currently running,
+// so a stray keystroke from the TUI is a benign no-op rather than a panic.
+var ErrNoActiveStep = errors.New("no step is currently running")
 
 // Runner executes steps sequentially, one at a time. A single Runner drives one
 // run; the TUI reuses the same Runner for a retry (RunOne) so there is never
@@ -49,6 +54,19 @@ func (r *Runner) currentSize() ptySize {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.size
+}
+
+// WriteInput forwards raw bytes to the running step's pty master (its stdin),
+// for the TUI's "type mode" (e.g. an interactive sudo password). Mutex-guarded
+// like SetSize since the run goroutine swaps r.active per step.
+func (r *Runner) WriteInput(p []byte) (int, error) {
+	r.mu.Lock()
+	active := r.active
+	r.mu.Unlock()
+	if active == nil {
+		return 0, ErrNoActiveStep
+	}
+	return active.Write(p)
 }
 
 func (r *Runner) setActive(f *os.File) {
