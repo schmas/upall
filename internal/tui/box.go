@@ -16,14 +16,17 @@ const (
 	boxBottomRight = "╯"
 	boxHoriz       = "─"
 	boxVert        = "│"
+	boxThumb       = "┃"
 )
 
 // titledBox renders body inside a rounded border whose top edge carries a left
 // title and an optional right-aligned count. w and h are the OUTER dimensions
 // (including the 1-cell border on each side); body is clipped and padded to the
 // inner area so the box is always exactly w×h with no overflow. The border color
-// is the theme accent when focused, else dim.
-func titledBox(title, count, body string, focused bool, w, h int, st styles) string {
+// is the theme accent when focused, else dim. thumb, if non-nil, marks which
+// body rows (by index) render a heavy scrollbar thumb on the right border
+// instead of the plain vertical bar; pass nil for boxes with no scrollbar.
+func titledBox(title, count, body string, focused bool, w, h int, st styles, thumb []bool) string {
 	if w < 2 {
 		w = 2
 	}
@@ -38,18 +41,56 @@ func titledBox(title, count, body string, focused bool, w, h int, st styles) str
 	}
 	bs := lipgloss.NewStyle().Foreground(col)
 	vert := bs.Render(boxVert)
+	thumbCell := bs.Render(boxThumb)
 
 	var b strings.Builder
 	b.WriteString(bs.Render(boxTopLeft + horizFill(title, count, innerW) + boxTopRight))
 	b.WriteByte('\n')
-	for _, ln := range fitLines(body, innerW, innerH) {
+	for i, ln := range fitLines(body, innerW, innerH) {
+		right := vert
+		if i < len(thumb) && thumb[i] {
+			right = thumbCell
+		}
 		b.WriteString(vert)
 		b.WriteString(ln)
-		b.WriteString(vert)
+		b.WriteString(right)
 		b.WriteByte('\n')
 	}
 	b.WriteString(bs.Render(boxBottomLeft + strings.Repeat(boxHoriz, innerW) + boxBottomRight))
 	return b.String()
+}
+
+// scrollbarThumb returns, for a track of trackH rows, which rows should render
+// the scrollbar thumb given the total content lines, the visible (viewport)
+// line count, and the current top offset. It returns nil when all content
+// fits the track (nothing to scroll), so callers can pass the result straight
+// through to titledBox without a fits-check of their own.
+func scrollbarThumb(trackH, total, visible, offset int) []bool {
+	if trackH <= 0 || total <= visible {
+		return nil
+	}
+	thumbH := trackH * visible / total
+	if thumbH < 1 {
+		thumbH = 1
+	}
+	if thumbH > trackH {
+		thumbH = trackH
+	}
+	thumbStart := 0
+	if maxOffset := total - visible; maxOffset > 0 {
+		thumbStart = offset * (trackH - thumbH) / maxOffset
+	}
+	if thumbStart > trackH-thumbH {
+		thumbStart = trackH - thumbH
+	}
+	if thumbStart < 0 {
+		thumbStart = 0
+	}
+	thumb := make([]bool, trackH)
+	for i := thumbStart; i < thumbStart+thumbH; i++ {
+		thumb[i] = true
+	}
+	return thumb
 }
 
 // horizFill builds the top border interior (between the corners), exactly innerW
