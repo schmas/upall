@@ -16,6 +16,8 @@ go.work.sum
 /dist/
 # local binary
 /upall
+# direnv-scoped GOBIN (see .envrc)
+/.bin/
 
 # === Logs ===
 *.log
