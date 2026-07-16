@@ -118,6 +118,53 @@ func TestRetryGuard(t *testing.T) {
 	}
 }
 
+// TestContinueGuard is the run-state machine for the continue action: it fires
+// only when idle, a run has started, and some step is still pending/aborted.
+func TestContinueGuard(t *testing.T) {
+	m, launched, _ := testModel(demoSteps())
+	sizeUp(m)
+
+	// Blocked before any run has started.
+	m.continueRun()
+	if *launched != 0 {
+		t.Error("continue should be blocked before the run has started")
+	}
+
+	startRunning(m)
+	m.states[0] = engine.StateAborted
+	m.states[1] = engine.StatePending
+
+	// Blocked while a run is active.
+	m.running = true
+	m.continueRun()
+	if *launched != 0 {
+		t.Error("no launch expected while running")
+	}
+
+	// Allowed when idle with an aborted/pending suffix; resumes from the
+	// first non-terminal-success step.
+	m.running = false
+	m.continueRun()
+	if !m.running {
+		t.Error("continue should set running")
+	}
+	if m.states[0] != engine.StatePending || m.states[1] != engine.StatePending {
+		t.Error("continue should reset the aborted+pending suffix to pending")
+	}
+	if *launched != 1 {
+		t.Errorf("launch count = %d, want 1", *launched)
+	}
+
+	// Blocked once every step reached a terminal success (nothing to resume).
+	m.running = false
+	m.states[0] = engine.StateOK
+	m.states[1] = engine.StateFailed
+	m.continueRun()
+	if *launched != 1 {
+		t.Error("continue should be blocked when nothing is pending/aborted")
+	}
+}
+
 func TestQuitCancelsAndAborts(t *testing.T) {
 	m, _, canceled := testModel(demoSteps())
 	sizeUp(m)

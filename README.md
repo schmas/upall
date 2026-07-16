@@ -81,6 +81,7 @@ key below is rebindable via `[keys]` in `config.toml`.
 | `⏎` (or `s`) | Start the run (idle) / follow the running step | Steps |
 | `a` | Show all step logs concatenated | Steps |
 | `r` | Retry the selected failed step (only when idle) | Steps |
+| `u` | Resume: re-run the aborted step and every step after it (only when idle) | Steps |
 | `R` | Re-run every included step | Steps |
 | `g` / `G` | Scroll to top / bottom | Output |
 | `⏎`/`→`, `←` | Expand-or-select / collapse a past run (or click) | History |
@@ -145,13 +146,13 @@ only when it is on `PATH`, so the `bash` default still degrades to `sh` on a
 host without bash; a per-step `shell` is used verbatim.
 
 Rebindable actions: `up, down, top, bottom, start, follow, all-logs, retry,
-restart, pager, stop, quit, focus-next, focus-prev, filter-next, filter-prev,
-toggle, expand, collapse, wrap, open-config, open-config-dir`.
+continue, restart, pager, stop, quit, focus-next, focus-prev, filter-next,
+filter-prev, toggle, expand, collapse, wrap, open-config, open-config-dir`.
 
 `stop` (default `x`) cancels the active run and leaves the TUI open: the running
 step is marked aborted, steps that had not started stay pending, and the header
-goes idle. Unlike `quit` it does not exit, so `r` (retry) and `R` (re-run) still
-work afterwards. It is a no-op when no run is active.
+goes idle. Unlike `quit` it does not exit, so `r` (retry), `u` (continue), and
+`R` (re-run) still work afterwards. It is a no-op when no run is active.
 
 ## Configuring steps
 

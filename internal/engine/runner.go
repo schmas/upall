@@ -78,6 +78,21 @@ func (r *Runner) RunOne(ctx context.Context, steps []Step, i int) {
 	r.runStep(ctx, steps, i)
 }
 
+// RunFrom runs steps[start:] in order (used by the TUI continue action to
+// resume a run that stop cancelled mid-queue). It no-ops if start is out of
+// range or ctx is already cancelled, same guard as RunOne.
+func (r *Runner) RunFrom(ctx context.Context, steps []Step, start int) {
+	if start < 0 || start >= len(steps) {
+		return
+	}
+	for i := start; i < len(steps); i++ {
+		if ctx.Err() != nil {
+			return
+		}
+		r.runStep(ctx, steps, i)
+	}
+}
+
 func (r *Runner) runStep(ctx context.Context, steps []Step, i int) {
 	st := steps[i]
 	if st.Skip {

@@ -73,3 +73,24 @@ func TestRetryLaunchesThroughLoop(t *testing.T) {
 		t.Fatalf("launch count = %d, want 2 (confirm-start + retry)", *launched)
 	}
 }
+
+// TestContinueLaunchesThroughLoop simulates stop cutting a run short (step 0
+// aborted mid-flight, step 1 never started) and drives a real 'u' keypress
+// through the event loop, proving continue resumes the interrupted suffix.
+func TestContinueLaunchesThroughLoop(t *testing.T) {
+	m, launched := integrationModel(t)
+	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(120, 40))
+
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter}) // confirm preview → RunAll launch
+	tm.Send(startMsg{0})
+	tm.Send(doneMsg{i: 0, res: engine.Result{State: engine.StateAborted}}) // stop hit mid-step
+	tm.Send(RunDoneMsg{})                                                  // run idle now; step 1 stayed pending
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+
+	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+	// confirm-start RunAll launch + the continue RunFrom launch = 2.
+	if *launched != 2 {
+		t.Fatalf("launch count = %d, want 2 (confirm-start + continue)", *launched)
+	}
+}
