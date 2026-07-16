@@ -84,7 +84,7 @@ func (m *Model) renderStepsPane() string {
 	}
 	count := fmt.Sprintf("%d/%d", m.doneCount(), m.includedCount())
 	return titledBox("Steps", count, strings.Join(rows, "\n"),
-		m.focus == FocusSteps, m.stepsRect.w, m.stepsRect.h, m.st)
+		m.focus == FocusSteps, m.stepsRect.w, m.stepsRect.h, m.st, nil)
 }
 
 // filterTabs renders the All·Pending·Done tabs with the active one highlighted.
@@ -115,7 +115,7 @@ func (m *Model) renderHistoryPane() string {
 	}
 	count := fmt.Sprintf("%d", len(m.runs))
 	return titledBox("History", count, strings.Join(lines, "\n"),
-		focused, m.histRect.w, m.histRect.h, m.st)
+		focused, m.histRect.w, m.histRect.h, m.st, nil)
 }
 
 // histRowText renders one History row: a run header with expand marker, status
@@ -156,11 +156,13 @@ func (m *Model) histRowText(i int, r histRow, focused bool) string {
 
 // renderOutputPane wraps the scrolling viewport in the Output box, titled with
 // the current source and a subtitle of wrap state, line count, and (for capped
-// history logs) a pager hint.
+// history logs) a pager hint. The right border carries a scrollbar thumb
+// alongside the line-count subtitle so position/length are visible at a glance.
 func (m *Model) renderOutputPane() string {
 	title, count := m.outputTitleCount()
+	thumb := scrollbarThumb(m.outRect.h-2, m.vp.TotalLineCount(), m.vp.Height, m.vp.YOffset)
 	return titledBox(title, count, m.vp.View(),
-		m.focus == FocusOutput, m.outRect.w, m.outRect.h, m.st)
+		m.focus == FocusOutput, m.outRect.w, m.outRect.h, m.st, thumb)
 }
 
 // outputTitleCount builds the Output box title (source label) and subtitle. The
