@@ -171,6 +171,40 @@ func TestRunOneReRunsSingleStep(t *testing.T) {
 	}
 }
 
+func TestRunFromSkipsCompletedSteps(t *testing.T) {
+	sink := newRecSink()
+	steps := []Step{
+		{Key: "a", Run: []string{"echo a"}},
+		{Key: "b", Run: []string{"echo b"}},
+		{Key: "c", Run: []string{"echo c"}},
+	}
+	NewRunner("", sink).RunFrom(context.Background(), steps, 1)
+
+	if _, ran := sink.done[0]; ran {
+		t.Fatal("RunFrom ran step 0, which is before start")
+	}
+	for _, i := range []int{1, 2} {
+		if res, ran := sink.done[i]; !ran || res.State != StateOK {
+			t.Fatalf("RunFrom step %d = %+v ran=%v, want OK", i, res, ran)
+		}
+	}
+}
+
+func TestRunFromOutOfRangeIsNoop(t *testing.T) {
+	sink := newRecSink()
+	steps := []Step{{Key: "a", Run: []string{"echo a"}}}
+
+	NewRunner("", sink).RunFrom(context.Background(), steps, len(steps))
+	if len(sink.done) != 0 {
+		t.Fatalf("RunFrom with start==len(steps) ran steps: %+v", sink.done)
+	}
+
+	NewRunner("", sink).RunFrom(context.Background(), steps, -1)
+	if len(sink.done) != 0 {
+		t.Fatalf("RunFrom with negative start ran steps: %+v", sink.done)
+	}
+}
+
 func TestQuitCancelAbortsStep(t *testing.T) {
 	sink := newRecSink()
 	ctx, cancel := context.WithCancel(context.Background())

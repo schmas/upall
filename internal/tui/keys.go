@@ -9,18 +9,19 @@ import (
 // keyMap is the TUI's key bindings, built from Settings.Keys so every action is
 // rebindable. It also satisfies help.KeyMap for the optional full-help listing.
 type keyMap struct {
-	Up      key.Binding
-	Down    key.Binding
-	Top     key.Binding
-	Bottom  key.Binding
-	Start   key.Binding
-	Follow  key.Binding
-	All     key.Binding
-	Retry   key.Binding
-	Restart key.Binding
-	Pager   key.Binding
-	Stop    key.Binding
-	Quit    key.Binding
+	Up       key.Binding
+	Down     key.Binding
+	Top      key.Binding
+	Bottom   key.Binding
+	Start    key.Binding
+	Follow   key.Binding
+	All      key.Binding
+	Retry    key.Binding
+	Continue key.Binding
+	Restart  key.Binding
+	Pager    key.Binding
+	Stop     key.Binding
+	Quit     key.Binding
 
 	FocusNext key.Binding
 	FocusPrev key.Binding
@@ -63,6 +64,7 @@ func keysFrom(set settings.Settings) keyMap {
 		Follow:     bind("follow", "⏎", "follow"),
 		All:        bind("all-logs", "a", "all logs"),
 		Retry:      bind("retry", "r", "retry"),
+		Continue:   bind("continue", "u", "continue"),
 		Restart:    bind("restart", "R", "re-run all"),
 		Pager:      bind("pager", "l", "pager"),
 		Stop:       bind("stop", "x", "stop"),
@@ -91,7 +93,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Top, k.Bottom, k.FocusNext, k.FocusPrev},
-		{k.Start, k.Follow, k.All, k.Retry, k.Restart, k.Pager},
+		{k.Start, k.Follow, k.All, k.Retry, k.Continue, k.Restart, k.Pager},
 		{k.FilterPrev, k.FilterNext, k.Toggle, k.Expand, k.Collapse},
 		{k.Wrap, k.OpenConfig, k.OpenConfigDir, k.Stop, k.Quit},
 	}

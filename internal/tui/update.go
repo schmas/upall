@@ -204,6 +204,8 @@ func (m *Model) handleStepsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.toggleSelected()
 	case key.Matches(msg, m.keys.Retry):
 		return m, m.retry()
+	case key.Matches(msg, m.keys.Continue):
+		return m, m.continueRun()
 	case key.Matches(msg, m.keys.Restart):
 		return m, m.restartAll()
 	case key.Matches(msg, m.keys.Pager):
@@ -535,6 +537,40 @@ func (m *Model) retry() tea.Cmd {
 	// launch synchronously (on the update goroutine) so wg.Add happens-before
 	// any subsequent quit reap; only the runner itself is a goroutine.
 	m.launchRun(func(ctx context.Context) { m.rc.runner.RunOne(ctx, m.rc.steps, i) })
+	return nil
+}
+
+// continueRun resumes a run that stop cut short: it finds the first step that
+// never reached a terminal success (pending or aborted) and re-runs it and
+// every step after it, leaving earlier OK/failed/skipped steps untouched. Like
+// retry it fires only when idle, so it cannot race a live run on shared state.
+func (m *Model) continueRun() tea.Cmd {
+	if m.running || !m.started {
+		return nil
+	}
+	start := -1
+	for i, st := range m.states {
+		if st == engine.StatePending || st == engine.StateAborted {
+			start = i
+			break
+		}
+	}
+	if start == -1 {
+		return nil
+	}
+	for i := start; i < len(m.states); i++ {
+		resetTerm(m.terms[i])
+		m.states[i] = engine.StatePending
+		m.durs[i] = engine.Result{}
+	}
+	m.activeIdx = -1
+	m.follow = true
+	m.running = true
+	m.totalStart = time.Now()
+	m.totalEnd = time.Time{}
+	m.refreshHistory() // hide the current run while it resumes
+	m.rebuildContent()
+	m.launchRun(func(ctx context.Context) { m.rc.runner.RunFrom(ctx, m.rc.steps, start) })
 	return nil
 }
 

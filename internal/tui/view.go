@@ -219,7 +219,7 @@ func (m *Model) footerHints() []footerHint {
 	if m.showHelp {
 		return []footerHint{
 			{"tab", "pane"}, {"↑/↓", "move"}, {"⏎", "start/follow"}, {"a", "all"},
-			{"r", "retry"}, {"R", "re-run"}, {"x", "stop"}, {"w", "wrap"},
+			{"r", "retry"}, {"u", "continue"}, {"R", "re-run"}, {"x", "stop"}, {"w", "wrap"},
 			{"l", "pager"}, {"g/G", "top/bottom"}, {"c", "config"}, {"C", "config dir"},
 			{"?", "help"}, {"q", "quit"},
 		}
@@ -232,7 +232,7 @@ func (m *Model) footerHints() []footerHint {
 		hints = []footerHint{{"↑/↓", "move"}, {"⏎/→", "expand"}, {"←", "collapse"}, {"w", "wrap"}, {"l", "pager"}, {"tab", "pane"}, {"q", "quit"}}
 	default: // FocusSteps
 		if m.started {
-			hints = []footerHint{{"↑/↓", "move"}, {"⏎", "follow"}, {"a", "all"}, {"r", "retry"}, {"R", "re-run"}, {"l", "pager"}, {"c", "config"}, {"tab", "pane"}, {"q", "quit"}}
+			hints = []footerHint{{"↑/↓", "move"}, {"⏎", "follow"}, {"a", "all"}, {"r", "retry"}, {"u", "continue"}, {"R", "re-run"}, {"l", "pager"}, {"c", "config"}, {"tab", "pane"}, {"q", "quit"}}
 		} else {
 			hints = []footerHint{{"⏎", "start"}, {"↑/↓", "move"}, {"space", "toggle"}, {"c", "config"}, {"tab", "pane"}, {"q", "quit"}}
 		}
