@@ -62,7 +62,7 @@ type Run struct {
 // map into key.Bindings.
 var knownActions = []string{
 	"up", "down", "top", "bottom",
-	"start", "follow", "all-logs", "retry", "continue", "restart", "pager", "stop", "quit",
+	"start", "follow", "all-logs", "retry", "continue", "restart", "pager", "stop", "type", "quit",
 	"focus-next", "focus-prev",
 	"filter-next", "filter-prev", "toggle",
 	"expand", "collapse", "wrap",
@@ -95,6 +95,7 @@ func defaultKeys() map[string][]string {
 		"restart":         {"R"},
 		"pager":           {"l"},
 		"stop":            {"x"},
+		"type":            {"i"},
 		"quit":            {"q", "ctrl+c"},
 		"focus-next":      {"tab"},
 		"focus-prev":      {"shift+tab"},

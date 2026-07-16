@@ -27,9 +27,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.typing {
+			return m.handleTypingKey(msg)
+		}
 		return m.handleKey(msg)
 
 	case tea.MouseMsg:
+		// Type mode is exclusive, like the KeyMsg branch above: a click that
+		// changes focus or selection while typing would silently redirect
+		// keystrokes meant for the running step without ever leaving type mode.
+		if m.typing {
+			return m, nil
+		}
 		return m.handleMouse(msg)
 
 	case startMsg:
@@ -67,6 +76,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case doneMsg:
 		m.states[msg.i] = msg.res.State
 		m.durs[msg.i] = msg.res
+		if m.typing && m.activeIdx == msg.i {
+			m.typing = false
+		}
 		if m.activeIdx == msg.i {
 			m.activeIdx = -1
 		}
@@ -83,6 +95,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case RunDoneMsg:
 		m.running = false
 		m.activeIdx = -1
+		m.typing = false
 		m.totalEnd = time.Now()
 		// The run finished: record its manifest and refresh the History pane so the
 		// just-completed run shows up as the latest entry.
@@ -303,10 +316,50 @@ func (m *Model) handleOutputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, m.keys.Pager):
 		return m, m.pagerForSelected()
+	case key.Matches(msg, m.keys.TypeMode):
+		if m.canType() {
+			m.typing = true
+		}
+		return m, nil
 	}
 	var cmd tea.Cmd
 	m.vp, cmd = m.vp.Update(msg)
 	return m, cmd
+}
+
+// keyToBytes converts a key event into the raw bytes a real terminal would
+// send to a child's stdin. Unmapped keys return nil (ignored in type mode).
+func keyToBytes(msg tea.KeyMsg) []byte {
+	switch msg.Type {
+	case tea.KeyRunes, tea.KeySpace:
+		return []byte(string(msg.Runes))
+	case tea.KeyEnter:
+		return []byte{'\r'}
+	case tea.KeyBackspace:
+		return []byte{0x7f}
+	case tea.KeyCtrlC:
+		return []byte{0x03}
+	default:
+		return nil
+	}
+}
+
+// handleTypingKey forwards raw keystrokes to the running step's pty while type
+// mode is active. Esc (hardcoded, not rebindable) exits back to normal
+// navigation; the doneMsg/RunDoneMsg/stop handlers are what actually end type
+// mode otherwise, so a write that fails here (e.g. the brief gap between two
+// commands within the same step, where r.active is momentarily nil) is just
+// dropped rather than exiting — the run is still active from the model's
+// point of view, there is just nothing to write to for an instant.
+func (m *Model) handleTypingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyEsc {
+		m.typing = false
+		return m, nil
+	}
+	if b := keyToBytes(msg); b != nil {
+		_, _ = m.rc.runner.WriteInput(b)
+	}
+	return m, nil
 }
 
 // handleHistoryKey routes keys when the History pane is focused: cursor
@@ -613,6 +666,7 @@ func (m *Model) stop() {
 	if !m.running || m.rc.runCancel == nil {
 		return
 	}
+	m.typing = false
 	m.rc.runCancel()
 }
 

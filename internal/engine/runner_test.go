@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"sync"
@@ -122,24 +123,58 @@ func TestTimeoutKillsStep(t *testing.T) {
 	}
 }
 
-func TestStdinGetsEOFNoHang(t *testing.T) {
+// TestWriteInputFeedsRunningStep proves stdin is now a live pty: a step that
+// reads stdin blocks until WriteInput feeds it (this is what lets the TUI's
+// type mode answer an interactive sudo password), not instant EOF as before.
+// The Timeout is the backstop so a regression cannot hang the test suite.
+func TestWriteInputFeedsRunningStep(t *testing.T) {
 	sink := newRecSink()
-	// If stdin were the pty (not /dev/null) this would block forever; the
-	// generous timeout only catches a regression, it must not fire.
-	steps := []Step{{Key: "rd", Shell: "bash", Run: []string{"read x; echo done"}, Timeout: 5 * time.Second}}
-	start := time.Now()
-	NewRunner("", sink).RunAll(context.Background(), steps)
-	elapsed := time.Since(start)
+	runner := NewRunner("", sink)
+	steps := []Step{{Key: "rd", Shell: "bash", Run: []string{`read x; echo "got:$x"`}, Timeout: 5 * time.Second}}
 
-	if elapsed > 2*time.Second {
-		t.Fatalf("step reading stdin hung: %v", elapsed)
+	runDone := make(chan struct{})
+	go func() {
+		runner.RunAll(context.Background(), steps)
+		close(runDone)
+	}()
+
+	writeInputWhenReady(t, runner, []byte("hello\n"))
+
+	select {
+	case <-runDone:
+	case <-time.After(4 * time.Second):
+		t.Fatal("step did not finish after WriteInput")
 	}
 	if res := sink.done[0]; res.State != StateOK {
-		t.Fatalf("done = %+v, want OK (stdin EOF, echo ran)", res)
+		t.Fatalf("done = %+v, want OK", res)
 	}
-	if joined := strings.Join(sink.linesOf(0), " "); !strings.Contains(joined, "done") {
-		t.Fatalf("expected 'done', got %q", joined)
+	if joined := strings.Join(sink.linesOf(0), " "); !strings.Contains(joined, "got:hello") {
+		t.Fatalf("expected 'got:hello', got %q", joined)
 	}
+}
+
+// TestWriteInputNoActiveStepIsNoop guards against a stray keystroke (e.g. type
+// mode racing the run ending) panicking instead of reporting a benign error.
+func TestWriteInputNoActiveStepIsNoop(t *testing.T) {
+	runner := NewRunner("", newRecSink())
+	if _, err := runner.WriteInput([]byte("x")); !errors.Is(err, ErrNoActiveStep) {
+		t.Fatalf("WriteInput with no active step = %v, want ErrNoActiveStep", err)
+	}
+}
+
+// writeInputWhenReady retries WriteInput until the runner's pty master is live
+// (r.active is set slightly after Sink.StepStart fires, in the same runner
+// goroutine, so polling the write itself avoids a race on that gap).
+func writeInputWhenReady(t *testing.T, runner *Runner, p []byte) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := runner.WriteInput(p); err == nil {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("WriteInput never found an active step")
 }
 
 func TestANSIColorSurvivesPTY(t *testing.T) {
@@ -234,10 +269,15 @@ func TestSkippedStepReported(t *testing.T) {
 	}
 }
 
-// TestBackgroundSlaveHolderDoesNotHang is the C1 regression: the shell exits
-// immediately but `sleep 3 &` inherits the pty slave and holds it open, so the
-// master never gets EOF. Closing the master cannot unblock the read on darwin,
-// so the runner must cancel the drain (cancelreader) and finish promptly.
+// TestBackgroundSlaveHolderDoesNotHang is the C1 regression: a step backgrounds
+// `sleep 3 &` and the shell exits immediately after. Originally this exercised
+// the cancelreader force-cancel fallback (the backgrounded process inherited
+// the slave and kept the master from getting a natural EOF). Since startPTY
+// made the child a session leader (Setsid, for sudo's /dev/tty routing), the
+// session's teardown on shell exit takes the backgrounded process's terminal
+// with it, so the master gets EOF quickly on its own — the fallback path is
+// no longer exercised, but the guarantee this test protects (the runner must
+// never hang on a step that backgrounds a job) still holds either way.
 func TestBackgroundSlaveHolderDoesNotHang(t *testing.T) {
 	sink := newRecSink()
 	steps := []Step{{Key: "bg", Shell: "bash", Run: []string{"echo started; sleep 3 &"}}}
