@@ -1,5 +1,5 @@
 // Command upall updates every installed toolchain (OS packages, chezmoi,
-// Homebrew, mise, rust, uv, Claude CLI, ClaudeKit, fisher, atuin) through a
+// Homebrew, mise, rust, uv, Claude CLI, AgentKit, fisher, atuin) through a
 // config-driven step engine. Steps come entirely from TOML — embedded defaults
 // plus a user override layer — never from hardcoded Go.
 //

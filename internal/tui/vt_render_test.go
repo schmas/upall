@@ -116,14 +116,14 @@ func TestRenderWideRunes(t *testing.T) {
 	}
 }
 
-// TestRenderCKFixture: a representative nested ck-update stream (colored banner,
+// TestRenderAKFixture: a representative nested ak-update stream (colored banner,
 // \r spinner, colored status) renders cleanly — spinner collapses to its final
 // frame, color survives, no raw CR leaks, widths fit. This is the automated gate
-// for the Phase 3 NO_COLOR removal; a real `upall ck` run is a manual check.
-func TestRenderCKFixture(t *testing.T) {
+// for the Phase 3 NO_COLOR removal; a real `upall ak` run is a manual check.
+func TestRenderAKFixture(t *testing.T) {
 	const w = 60
 	stream := "" +
-		"\x1b[1;36m╭─ ClaudeKit Update ─────────────╮\x1b[0m\r\n" +
+		"\x1b[1;36m╭─ AgentKit Update ──────────────╮\x1b[0m\r\n" +
 		"⠋ updating\r⠙ updating\r⠹ updating\r\x1b[32m✓\x1b[0m updated 3 plugins\r\n" +
 		"\x1b[33mWARN\x1b[0m one skill pinned\r\n"
 	got := render(w, 20, stream)

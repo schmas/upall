@@ -54,8 +54,8 @@ func TestMergeOverrideWins(t *testing.T) {
 }
 
 func TestMergeEnvKeywise(t *testing.T) {
-	base := StepDef{Key: "ck", Env: map[string]string{"UPALL_ACTIVE": "1", "NO_COLOR": "1"}}
-	over := StepDef{Key: "ck", Env: map[string]string{"NO_COLOR": "0", "EXTRA": "x"}}
+	base := StepDef{Key: "ak", Env: map[string]string{"UPALL_ACTIVE": "1", "NO_COLOR": "1"}}
+	over := StepDef{Key: "ak", Env: map[string]string{"NO_COLOR": "0", "EXTRA": "x"}}
 	m := Merge([]StepDef{base, over})[0]
 	if m.Env["UPALL_ACTIVE"] != "1" {
 		t.Error("inherited env key lost")
@@ -108,7 +108,7 @@ func TestEmbeddedRunOrder(t *testing.T) {
 		t.Fatalf("OS steps applying on Ubuntu = %v, want [os-apt]", osApplied)
 	}
 	// The toolchain steps keep v2's relative order after the OS step.
-	want := []string{"nix", "chezmoi", "brew", "mise", "rust", "uv", "claude", "ck", "fisher", "atuin"}
+	want := []string{"nix", "chezmoi", "brew", "mise", "rust", "uv", "claude", "ak", "fisher", "atuin"}
 	var got []string
 	for _, r := range resolved {
 		if !strings.HasPrefix(r.Key, "os-") {

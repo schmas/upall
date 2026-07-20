@@ -3,7 +3,7 @@
 Update every installed toolchain from one place, with a lazygit-style three-pane TUI.
 
 `upall` runs each tool's updater in order — OS packages, chezmoi, Homebrew, mise,
-rust, uv, Claude CLI, ClaudeKit, fisher, atuin — capturing real colored output
+rust, uv, Claude CLI, AgentKit, fisher, atuin — capturing real colored output
 through a pty and streaming it into a Bubble Tea dashboard. Steps are **config
 driven**: nothing is hardcoded in Go. The current set ships as embedded default
 plugins; you extend or override them with TOML in `$XDG_CONFIG_HOME/upall/steps.d/`.
