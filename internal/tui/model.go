@@ -166,6 +166,7 @@ type Model struct {
 	running    bool
 	started    bool // false on the idle dashboard, before the run is confirmed
 	typing     bool // type mode: keystrokes forward to the active step's pty
+	awaitInput bool // active step's latest output looks like a password prompt (drives the "press i to type" hint)
 	dirty      bool // All-logs content needs a rebuild (throttled to the tick)
 	activeIdx  int
 	totalStart time.Time
@@ -394,6 +395,15 @@ func (m *Model) isLiveStep() bool { return m.out.kind == outLiveStep }
 // have somewhere to go (e.g. an interactive sudo password).
 func (m *Model) canType() bool {
 	return m.running && m.isLiveStep() && m.out.step == m.activeIdx
+}
+
+// refreshAwaitInput recomputes whether the active running step's latest output
+// looks like an interactive password/passphrase prompt (e.g. sudo). It drives
+// the "press i to type" hint. A false positive only shows a harmless hint: keys
+// are never auto-forwarded, so the type key is still required to send anything.
+func (m *Model) refreshAwaitInput() {
+	m.awaitInput = m.running && m.activeIdx >= 0 && m.activeIdx < len(m.terms) &&
+		looksLikePasswordPrompt(promptTailLine(m.terms[m.activeIdx]))
 }
 
 // includedCount is the number of steps in the run set (M in the header N/M).

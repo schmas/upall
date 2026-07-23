@@ -45,6 +45,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.states[msg.i] = engine.StateRunning
 		m.starts[msg.i] = time.Now()
 		m.activeIdx = msg.i
+		m.awaitInput = false // a fresh step has emitted nothing to prompt with yet
 		if m.follow {
 			m.out = outSel{kind: outLiveStep, step: msg.i}
 			m.rebuildContent()
@@ -58,6 +59,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// (non-Safe) emulator is race-free; the drain goroutine started in
 			// New keeps Write from blocking on the emulator's reply pipe.
 			_, _ = m.terms[i].Write(b)
+		}
+		// The active step just produced output: re-check whether it is now sitting
+		// on an interactive prompt (e.g. sudo) so the "press i to type" hint tracks
+		// the live tail of what the running step printed.
+		if m.activeIdx >= 0 {
+			if _, touched := msg[m.activeIdx]; touched {
+				m.refreshAwaitInput()
+			}
 		}
 		// A single selected step rebuilds per batch (responsive live follow);
 		// "All logs" concatenates every emulator, so it is throttled to the tick.
@@ -76,6 +85,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case doneMsg:
 		m.states[msg.i] = msg.res.State
 		m.durs[msg.i] = msg.res
+		m.awaitInput = false // the step ended; whatever prompt it showed is moot
 		if m.typing && m.activeIdx == msg.i {
 			m.typing = false
 		}
@@ -96,6 +106,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.running = false
 		m.activeIdx = -1
 		m.typing = false
+		m.awaitInput = false
 		m.totalEnd = time.Now()
 		// The run finished: record its manifest and refresh the History pane so the
 		// just-completed run shows up as the latest entry.
@@ -166,6 +177,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, openConfigFileCmd()
 	case key.Matches(msg, m.keys.OpenConfigDir):
 		return m, openConfigDirCmd()
+	case key.Matches(msg, m.keys.TypeMode):
+		// Type mode is enterable from any pane while a step runs, so the
+		// "press i to type" hint on a sudo prompt works wherever focus is; it
+		// pulls the Output onto the active step and forwards keys from there. A
+		// no-op when idle — `i` is bound to nothing else, so consuming it is fine.
+		m.enterTypeMode()
+		return m, nil
 	}
 
 	// From the idle dashboard the start key launches the run. Gated to Steps
@@ -316,15 +334,26 @@ func (m *Model) handleOutputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, m.keys.Pager):
 		return m, m.pagerForSelected()
-	case key.Matches(msg, m.keys.TypeMode):
-		if m.canType() {
-			m.typing = true
-		}
-		return m, nil
 	}
 	var cmd tea.Cmd
 	m.vp, cmd = m.vp.Update(msg)
 	return m, cmd
+}
+
+// enterTypeMode switches into type mode for the running step: it points the
+// Output pane at the active step, focuses it, and starts forwarding keystrokes
+// to that step's pty. It is a no-op when no step is running, so the type key
+// does nothing on the idle dashboard. Being callable from any pane is what
+// makes the "press i to type" prompt hint work regardless of focus.
+func (m *Model) enterTypeMode() {
+	if !m.running || m.activeIdx < 0 || m.activeIdx >= len(m.steps) {
+		return
+	}
+	m.out = outSel{kind: outLiveStep, step: m.activeIdx}
+	m.follow = true
+	m.focus = FocusOutput
+	m.typing = true
+	m.rebuildContent()
 }
 
 // keyToBytes converts a key event into the raw bytes a real terminal would
@@ -667,6 +696,7 @@ func (m *Model) stop() {
 		return
 	}
 	m.typing = false
+	m.awaitInput = false
 	m.rc.runCancel()
 }
 

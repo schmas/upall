@@ -72,8 +72,10 @@ func TestCanTypeGuard(t *testing.T) {
 }
 
 // TestTypeKeyEntersTypeModeOnlyWhenTypable proves the type key ('i' by
-// default) is gated by canType exactly like retry/continue are gated by their
-// own guards.
+// default) enters type mode only while a step is actually running, and does
+// nothing on the idle dashboard. (Entry is gated on a running active step, not
+// the narrower canType() — the key now works from any pane; see
+// TestTypeKeyEntersTypeModeFromAnyPane.)
 func TestTypeKeyEntersTypeModeOnlyWhenTypable(t *testing.T) {
 	m, _, _ := testModel(demoSteps())
 	sizeUp(m)

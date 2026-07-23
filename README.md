@@ -90,7 +90,7 @@ key below is rebindable via `[keys]` in `config.toml`.
 | `c` / `C` | Open `config.toml` / the config folder | any |
 | `?` | Toggle the full-key footer | any |
 | `x` | Stop the current run and stay in the TUI (no-op when idle) | any |
-| `i` | Type mode: forward keystrokes to the running step (e.g. a sudo password) | Output (running step) |
+| `i` | Type mode: forward keystrokes to the running step (e.g. a sudo password) | any (during a run) |
 | `esc` | Exit type mode back to normal navigation | Output (typing) |
 | `q` / `ctrl-c` | Quit (cancels a running step) | any |
 
@@ -160,10 +160,17 @@ Every step's stdin is now a live pty, not `/dev/null`, so a step can prompt for
 input mid-run — the case that motivates this is a step whose `run` invokes
 `sudo` and needs an interactive password (e.g. on a remote host without a
 1Password/Touch-ID sudo integration): the prompt shows up in the Output pane
-like any other output. Focus Output on the running step and press `type`
-(default `i`) to forward keystrokes straight to it; type the password, `⏎` to
-send it, `esc` to leave type mode. A step nobody types into just blocks on that
-read — its `timeout` (or `stop`) is still the way out.
+like any other output.
+
+Keystrokes are **not** forwarded by default — they stay bound to the usual
+shortcuts (e.g. `c`/`C` open the config), so typing a password without arming
+type mode first would trigger those actions instead. When a running step's
+output looks like a password prompt, upall detects it and shows a
+`⚠ waiting for input · press i to type` warning in the Output title and a
+`type password` hint in the footer. Press `type` (default `i`) — from any pane
+during a run — to forward keystrokes straight to the step; type the password,
+`⏎` to send it, `esc` to leave type mode. A step nobody types into just blocks
+on that read — its `timeout` (or `stop`) is still the way out.
 
 ## Configuring steps
 
