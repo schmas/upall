@@ -38,6 +38,32 @@ func trimTrailingBlankLines(s string) string {
 	return strings.Join(lines[:end], "\n")
 }
 
+// promptTailLine returns the last non-blank rendered line of an emulator's
+// visible screen, with styling and trailing spaces stripped — the line a
+// program's prompt sits on while it waits for input. It reads only the visible
+// screen (not scrollback): a prompt is on the cursor's line, which is always
+// visible.
+func promptTailLine(e *vt.Emulator) string {
+	lines := strings.Split(trimTrailingBlankLines(e.Render()), "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.TrimRight(ansi.Strip(lines[len(lines)-1]), " ")
+}
+
+// looksLikePasswordPrompt matches a trailing line that asks for a password or
+// passphrase (sudo, ssh, an ssh key). It is deliberately narrow — the line must
+// end in ':' and mention password/passphrase — so ordinary output never trips
+// the "press i to type" hint. The match is only a hint anyway: keystrokes are
+// never auto-forwarded, so a miss or a false positive is harmless.
+func looksLikePasswordPrompt(line string) bool {
+	if !strings.HasSuffix(line, ":") {
+		return false
+	}
+	l := strings.ToLower(line)
+	return strings.Contains(l, "password") || strings.Contains(l, "passphrase")
+}
+
 // resetTerm returns an emulator to a clean slate in place: it clears the visible
 // screen, homes the cursor, and empties the scrollback. Resetting in place (vs
 // creating a fresh emulator) keeps the emulator's long-lived drain goroutine and

@@ -182,6 +182,8 @@ func (m *Model) outputTitleCount() (string, string) {
 		}
 		if m.typing {
 			title = "● typing · " + title
+		} else if m.awaitInput && m.out.step == m.activeIdx {
+			title = "⚠ waiting for input · press i to type · " + title
 		}
 		sub = fmt.Sprintf("%dL", lines)
 	case outHistStep, outHistAll:
@@ -238,7 +240,7 @@ func (m *Model) footerHints() []footerHint {
 	switch m.focus {
 	case FocusOutput:
 		hints = []footerHint{{"↑/↓", "scroll"}, {"g/G", "top/bottom"}, {"w", "wrap"}, {"l", "pager"}, {"tab", "pane"}, {"q", "quit"}}
-		if m.canType() {
+		if m.canType() && !m.awaitInput {
 			hints = append(hints, footerHint{"i", "type"})
 		}
 	case FocusHistory:
@@ -255,6 +257,12 @@ func (m *Model) footerHints() []footerHint {
 	// pane is focused (the user is usually watching Output as a run streams).
 	if m.running {
 		hints = append([]footerHint{{"x", "stop"}}, hints...)
+	}
+	// A running step sitting on an interactive prompt gets the loudest hint,
+	// ahead of everything else and whatever pane is focused, so a sudo password
+	// prompt cannot be mistaken for output the user should type over blindly.
+	if m.awaitInput && !m.typing {
+		hints = append([]footerHint{{"i", "type password"}}, hints...)
 	}
 	return hints
 }
