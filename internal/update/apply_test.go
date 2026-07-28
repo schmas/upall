@@ -441,7 +441,9 @@ func TestRequireTrustedAssetURL(t *testing.T) {
 	}{
 		{"https://github.com/schmas/upall/releases/download/v1/upall.tar.gz", true, "github release"},
 		{"https://GitHub.com/schmas/upall/releases/download/v1/upall.tar.gz", true, "host case is ignored"},
-		{"https://objects.githubusercontent.com/blob", true, "objects host"},
+		{"https://objects.githubusercontent.com/blob", true, "legacy release-asset CDN"},
+		{"https://release-assets.githubusercontent.com/blob?sig=x", true, "current release-asset CDN"},
+		{"https://RELEASE-ASSETS.githubusercontent.com/blob", true, "release-asset CDN, host case ignored"},
 		{"https://api.github.com/x", true, "api host"},
 		{"http://github.com/schmas/upall/releases/download/v1/x.tar.gz", false, "plain http"},
 		{"https://github.com.evil.test/x", false, "lookalike host"},

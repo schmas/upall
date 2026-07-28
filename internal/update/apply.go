@@ -87,15 +87,23 @@ var (
 // checksums are published alongside the archive and so prove only that the
 // bytes arrived intact from wherever the release JSON pointed — not that the
 // pointer itself was legitimate.
+//
+// Both githubusercontent CDNs are listed because GitHub has renamed this one
+// before: release downloads redirected to objects.githubusercontent.com for
+// years and now land on release-assets.githubusercontent.com, which v0.6.0
+// refused — and a build that refuses the redirect cannot download its own fix,
+// so every install had to be upgraded by hand. Keep retired hosts listed, and
+// treat a rename here as a release-blocking bug.
 var allowedAssetHosts = map[string]bool{
-	"github.com":                    true,
-	"objects.githubusercontent.com": true,
-	"api.github.com":                true,
+	"github.com":                           true,
+	"objects.githubusercontent.com":        true,
+	"release-assets.githubusercontent.com": true,
+	"api.github.com":                       true,
 }
 
 // githubReleasePath is the only github.com path prefix asset URLs may use.
-// Redirect targets on the other allowlisted hosts (objects.githubusercontent.com
-// serves opaque blob paths) are not path-scoped.
+// Redirect targets on the other allowlisted hosts (the githubusercontent CDNs
+// serve opaque, signed blob paths) are not path-scoped.
 const githubReleasePath = "/" + repoPath + "/releases/download/"
 
 // validateAssetURL guards every download and every redirect hop. It is a
