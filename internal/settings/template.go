@@ -25,7 +25,7 @@ schema = 1
 # list). Known actions: up, down, top, bottom, start, follow, all-logs, retry,
 # continue, restart, pager, stop, type, quit, focus-next, focus-prev,
 # filter-next, filter-prev, toggle, expand, collapse, wrap, open-config,
-# open-config-dir, self-update.
+# open-config-dir, self-update, help.
 # [keys]
 # up          = ["up", "k"]
 # down        = ["down", "j"]
@@ -52,6 +52,7 @@ schema = 1
 # open-config     = ["c"]
 # open-config-dir = ["C"]
 # self-update     = ["U"]
+# help            = ["?"]
 
 # [theme] colors accept a named color, a 256-palette index, or a hex value.
 # [theme]

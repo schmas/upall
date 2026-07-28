@@ -160,8 +160,13 @@ type Model struct {
 	keys keyMap
 	st   styles
 
-	focus    paneFocus
-	showHelp bool // '?' toggles a fuller footer hint
+	focus paneFocus
+
+	helpOpen      bool   // the floating Keybindings panel is up
+	helpCursor    int    // selected binding in that panel (enter runs it)
+	helpOffset    int    // first visible body line in that panel
+	helpSearching bool   // the panel's '/' filter prompt owns the keyboard
+	helpQuery     string // the filter itself; outlives the prompt until cleared
 
 	out      outSel     // what the Output pane renders (selection)
 	filter   stepFilter // view-only Steps filter

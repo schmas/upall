@@ -46,20 +46,39 @@ func TestDefaults(t *testing.T) {
 	}
 }
 
-// TestDefaultKeysAreUnambiguousPerAction proves the new self-update binding
-// does not shadow an existing one. Some keys are deliberately shared across
-// panes (enter drives start, follow and expand), so this only checks that "U"
-// is not already taken.
-func TestSelfUpdateKeyDoesNotCollide(t *testing.T) {
+// assertKeyUnclaimed proves a default binding does not shadow an existing one.
+// Some keys are deliberately shared across panes (enter drives start, follow
+// and expand), so a blanket all-keys-unique check would fail; this asserts only
+// that one key belongs to one owner.
+func assertKeyUnclaimed(t *testing.T, key, owner string) {
+	t.Helper()
 	for action, keys := range Defaults().Keys {
-		if action == "self-update" {
+		if action == owner {
 			continue
 		}
 		for _, k := range keys {
-			if k == "U" {
-				t.Errorf("action %q already binds U", action)
+			if k == key {
+				t.Errorf("action %q already binds %q (wanted it free for %q)", action, key, owner)
 			}
 		}
+	}
+}
+
+func TestSelfUpdateKeyDoesNotCollide(t *testing.T) {
+	assertKeyUnclaimed(t, "U", "self-update")
+}
+
+// TestHelpKeyDoesNotCollide covers the keybindings panel's own binding. It
+// proves only that the DEFAULTS are clean: load.go validates action names, not
+// key uniqueness, so a user rebinding help onto a higher-priority action's key
+// is silently shadowed (documented in the README).
+func TestHelpKeyDoesNotCollide(t *testing.T) {
+	assertKeyUnclaimed(t, "?", "help")
+	if got := Defaults().Keys["help"]; len(got) != 1 || got[0] != "?" {
+		t.Errorf("help binding = %v, want [?]", got)
+	}
+	if !isKnownAction("help") {
+		t.Error("help should be a known action")
 	}
 }
 

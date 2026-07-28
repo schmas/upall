@@ -60,6 +60,29 @@ func titledBox(title, count, body string, focused bool, w, h int, st styles, thu
 	return b.String()
 }
 
+// bottomBorderLabel rewrites a rendered box's last line so it carries a
+// right-aligned label on the bottom edge — where lazygit puts a list's position
+// readout. It reuses horizFill, so the label follows the same truncation rules
+// as the top border's count, and it measures the box rather than taking a width
+// so the two can never disagree.
+func bottomBorderLabel(box, label string, focused bool, st styles) string {
+	if label == "" {
+		return box
+	}
+	lines := strings.Split(box, "\n")
+	innerW := ansi.StringWidth(lines[0]) - 2
+	if innerW < 1 {
+		return box
+	}
+	col := st.dim
+	if focused {
+		col = st.accent
+	}
+	lines[len(lines)-1] = lipgloss.NewStyle().Foreground(col).
+		Render(boxBottomLeft + horizFill("", label, innerW) + boxBottomRight)
+	return strings.Join(lines, "\n")
+}
+
 // scrollbarThumb returns, for a track of trackH rows, which rows should render
 // the scrollbar thumb given the total content lines, the visible (viewport)
 // line count, and the current top offset. It returns nil when all content

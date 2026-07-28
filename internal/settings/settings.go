@@ -80,6 +80,7 @@ var knownActions = []string{
 	"expand", "collapse", "wrap",
 	"open-config", "open-config-dir",
 	"self-update",
+	"help",
 }
 
 // isKnownAction reports whether name is a rebindable action.
@@ -121,6 +122,7 @@ func defaultKeys() map[string][]string {
 		"open-config":     {"c"},
 		"open-config-dir": {"C"},
 		"self-update":     {"U"},
+		"help":            {"?"},
 	}
 }
 
