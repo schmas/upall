@@ -7,12 +7,17 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// pressSelfUpdate handles the self-update key from the idle state, in priority
-// order: a live run wins (pressing it mid-run must never reach an exec that
-// would orphan a pty child or skip the manifest/reap sequence), then a failed
-// check (whose reason is revealed rather than swallowed), then "nothing to do".
-// Only a confirmed available update opens the confirm prompt.
-func (m *Model) pressSelfUpdate() {
+// pressSelfUpdate handles the self-update key. It is only ever reached from
+// updateIdle — handleKey routes every other state to handleUpdateKey instead
+// (see below), which is what makes pressing U again while a check, confirm, or
+// apply is already in flight a no-op rather than a second concurrent request.
+// Priority order: a live run wins (pressing it mid-run must never reach an
+// exec that would orphan a pty child or skip the manifest/reap sequence), then
+// a known-available update (straight to confirm, no extra request). Anything
+// else — never checked this session, cache said current, or the last check
+// failed — starts a forced check (same seam as --check-update) so U always
+// verifies instead of only repeating whatever the last check left behind.
+func (m *Model) pressSelfUpdate() tea.Cmd {
 	switch {
 	case !m.set.Update.Enabled:
 		m.updateNote = "self-update is off ([update] enabled = false)"
@@ -23,16 +28,17 @@ func (m *Model) pressSelfUpdate() {
 		// after a successful one, or a previous apply that failed, must not close
 		// the retry path for the rest of the session.
 		m.updateState = updateConfirming
-	case m.updateErr != nil:
-		m.updateNote = "update check failed: " + m.updateErr.Error()
 	default:
-		m.updateNote = "no update available"
+		m.updateState = updateChecking
+		return m.checkUpdateCmd(true)
 	}
+	return nil
 }
 
-// handleUpdateKey routes keys while confirming or applying. Quit is handled by
-// the caller before this runs, so it is always reachable. While applying, keys
-// are swallowed: the binary is mid-replace and there is nothing safe to cancel.
+// handleUpdateKey routes keys while checking, confirming, or applying. Quit is
+// handled by the caller before this runs, so it is always reachable. Outside
+// updateConfirming — checking (bounded by updateCheckTimeout) and applying —
+// keys are swallowed: there is nothing safe for them to do mid-flight.
 func (m *Model) handleUpdateKey(msg tea.KeyMsg) tea.Cmd {
 	if m.updateState != updateConfirming {
 		return nil
@@ -116,22 +122,52 @@ func listenProgress(ch chan updateProgress) tea.Cmd {
 	}
 }
 
-// recordUpdateCheck stores the launch check's outcome. A failure is recorded,
-// never fatal and never a dialog: the footer gains a quiet "(check failed)"
-// suffix and the self-update key reveals the reason.
+// recordUpdateCheck stores a version check's outcome, from either the silent
+// launch check or a forced recheck U triggered. A failure is recorded, never
+// fatal and never a dialog: the footer gains a quiet "(check failed)" suffix.
+// msg.forced tells the caller which check this is: the launch check stays
+// silent (footer badge only, as before), while a forced recheck must land
+// somewhere visible — the confirm prompt when a release showed up, or a
+// footer note saying what it found otherwise — since U was pressed
+// specifically to find out.
+//
+// The two checks can overlap (U pressed during the launch check's own
+// network round trip): a late launch-check result arriving after the forced
+// one already moved the model out of updateIdle must not clobber what the
+// forced check established (an open confirm prompt, or its note) — the
+// forced check is the one the user is actually waiting on.
 func (m *Model) recordUpdateCheck(msg updateCheckedMsg) {
+	if !msg.forced && m.updateState != updateIdle {
+		return
+	}
+	if msg.forced {
+		m.updateState = updateIdle
+	}
 	if msg.err != nil {
 		m.updateErr = msg.err
 		m.updateInfo = nil
+		if msg.forced {
+			m.updateNote = "update check failed: " + msg.err.Error()
+		}
 		return
 	}
 	m.updateErr = nil
 	if msg.info != nil && msg.info.Available {
 		m.updateInfo = msg.info
+		if msg.forced {
+			m.updateState = updateConfirming
+		}
 		return
 	}
 	// No release info (unparsable local version) or already current.
 	m.updateInfo = nil
+	if msg.forced {
+		if msg.info != nil {
+			m.updateNote = "already on " + msg.info.Latest
+		} else {
+			m.updateNote = "no version info to compare (not a release build)"
+		}
+	}
 }
 
 // recordUpdateProgress advances the progress readout and re-arms the listener

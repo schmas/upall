@@ -101,16 +101,23 @@ not reach a verdict. Both persist until the next check replaces them — neither
 a toast, and neither ever opens a dialog over the dashboard. Hints keep priority
 over the badge on a narrow terminal.
 
-`U` then walks the update: it asks for confirmation in the footer, shows live
-download progress, and once the new binary is in place it exits the dashboard the
-same way `q` does — summary, logs, and manifest all written — before restarting
-in place with your original arguments. `U` is a no-op while a run is active (the
-footer says to stop the run first), so a self-update can never orphan a step's
-child process. After a failed check, `U` shows the reason instead of the prompt.
-Quitting mid-update abandons the download but still waits for an install already
-underway, so exiting can never leave you between two binaries; a failed install
-prints its full reason (including any manual recovery step) after the dashboard
-closes.
+`U` first makes sure it knows what it's confirming: if no update is already known
+this session — never checked yet, the cache said current, or the last check
+failed — it runs a live check (ignoring the cache, same as `--check-update`) and
+shows a `checking…` state in the footer while it does. Once it has an answer it
+either opens the confirm prompt (a release exists) or reports what it found in
+the footer (`already on v0.6.1`, or the failure reason) — retrying is exactly
+pressing `U` again. If an update is already known, `U` skips straight to confirm
+with no extra request.
+
+Confirming (`⏎`/`y`) shows live download progress, and once the new binary is in
+place it exits the dashboard the same way `q` does — summary, logs, and manifest
+all written — before restarting in place with your original arguments. `U` is a
+no-op while a run is active (the footer says to stop the run first), so a
+self-update can never orphan a step's child process. Quitting mid-update
+abandons the download but still waits for an install already underway, so
+exiting can never leave you between two binaries; a failed install prints its
+full reason (including any manual recovery step) after the dashboard closes.
 
 Set `[update] enabled = false` to switch all of it off — the launch check, the
 footer badge, `U`, and both flags.
@@ -142,7 +149,7 @@ key below is rebindable via `[keys]` in `config.toml`.
 | `w` | Toggle line wrap for a history log in the Output pane | any |
 | `l` | Open the selected log in the pager | Steps / History |
 | `c` / `C` | Open `config.toml` / the config folder | any |
-| `U` | Self-update: confirm, download, replace, and restart in place | any (when idle) |
+| `U` | Self-update: re-check if needed, then confirm, download, replace, and restart in place | any (when idle) |
 | `?` | Toggle the full-key footer | any |
 | `x` | Stop the current run and stay in the TUI (no-op when idle) | any |
 | `i` | Type mode: forward keystrokes to the running step (e.g. a sudo password) | any (during a run) |
