@@ -7,7 +7,9 @@ import (
 )
 
 // keyMap is the TUI's key bindings, built from Settings.Keys so every action is
-// rebindable. It also satisfies help.KeyMap for the optional full-help listing.
+// rebindable. Each binding also carries a caption computed from its ACTUAL keys
+// (see bind), which is what lets the keybindings panel print a rebind instead
+// of a hardcoded default.
 type keyMap struct {
 	Up       key.Binding
 	Down     key.Binding
@@ -55,52 +57,42 @@ func keysFrom(set settings.Settings) keyMap {
 		}
 		return def[action]
 	}
-	bind := func(action, helpKey, helpDesc string) key.Binding {
-		return key.NewBinding(key.WithKeys(keysOf(action)...), key.WithHelp(helpKey, helpDesc))
+	// The caption is DERIVED from the resolved keys rather than written by hand,
+	// so the keybindings panel can never print a key the user has rebound away.
+	// key.Matches ignores the help field, so this is behavior-neutral.
+	bind := func(action, desc string) key.Binding {
+		keys := keysOf(action)
+		return key.NewBinding(key.WithKeys(keys...), key.WithHelp(formatKeys(keys), desc))
 	}
 	return keyMap{
-		Up:         bind("up", "↑/k", "up"),
-		Down:       bind("down", "↓/j", "down"),
-		Top:        bind("top", "g", "top"),
-		Bottom:     bind("bottom", "G", "bottom"),
-		Start:      bind("start", "⏎", "start"),
-		Follow:     bind("follow", "⏎", "follow"),
-		All:        bind("all-logs", "a", "all logs"),
-		Retry:      bind("retry", "r", "retry"),
-		Continue:   bind("continue", "u", "continue"),
-		Restart:    bind("restart", "R", "re-run all"),
-		Pager:      bind("pager", "l", "pager"),
-		Stop:       bind("stop", "x", "stop"),
-		TypeMode:   bind("type", "i", "type"),
-		Quit:       bind("quit", "q", "quit"),
-		FocusNext:  bind("focus-next", "tab", "next pane"),
-		FocusPrev:  bind("focus-prev", "⇧tab", "prev pane"),
-		FilterNext: bind("filter-next", "→", "filter →"),
-		FilterPrev: bind("filter-prev", "←", "filter ←"),
-		Toggle:     bind("toggle", "space", "toggle"),
-		Expand:     bind("expand", "→", "expand"),
-		Collapse:   bind("collapse", "←", "collapse"),
-		Wrap:       bind("wrap", "w", "wrap"),
+		Up:         bind("up", "move up"),
+		Down:       bind("down", "move down"),
+		Top:        bind("top", "jump to the top"),
+		Bottom:     bind("bottom", "jump to the bottom"),
+		Start:      bind("start", "start the run"),
+		Follow:     bind("follow", "follow the running step"),
+		All:        bind("all-logs", "show every step's output"),
+		Retry:      bind("retry", "re-run the selected step"),
+		Continue:   bind("continue", "resume from the aborted step"),
+		Restart:    bind("restart", "re-run every step"),
+		Pager:      bind("pager", "open the full log in the pager"),
+		Stop:       bind("stop", "stop the running step"),
+		TypeMode:   bind("type", "type into the running step (sudo password)"),
+		Quit:       bind("quit", "quit upall"),
+		FocusNext:  bind("focus-next", "focus the next pane"),
+		FocusPrev:  bind("focus-prev", "focus the previous pane"),
+		FilterNext: bind("filter-next", "next step filter"),
+		FilterPrev: bind("filter-prev", "previous step filter"),
+		Toggle:     bind("toggle", "include/exclude the step before a run"),
+		Expand:     bind("expand", "expand the past run"),
+		Collapse:   bind("collapse", "collapse the past run"),
+		Wrap:       bind("wrap", "toggle wrapping of history output"),
 
-		OpenConfig:    bind("open-config", "c", "config file"),
-		OpenConfigDir: bind("open-config-dir", "C", "config dir"),
+		OpenConfig:    bind("open-config", "open config.toml"),
+		OpenConfigDir: bind("open-config-dir", "open the config directory"),
 
-		SelfUpdate: bind("self-update", "U", "self-update"),
+		SelfUpdate: bind("self-update", "check for a newer release"),
 
-		Help: key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-	}
-}
-
-// ShortHelp / FullHelp satisfy help.KeyMap.
-func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.FocusNext, k.Up, k.Down, k.Follow, k.All, k.Retry, k.Pager, k.Quit}
-}
-
-func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		{k.Up, k.Down, k.Top, k.Bottom, k.FocusNext, k.FocusPrev},
-		{k.Start, k.Follow, k.All, k.Retry, k.Continue, k.Restart, k.Pager},
-		{k.FilterPrev, k.FilterNext, k.Toggle, k.Expand, k.Collapse},
-		{k.Wrap, k.OpenConfig, k.OpenConfigDir, k.TypeMode, k.Stop, k.SelfUpdate, k.Quit},
+		Help: bind("help", "open this panel"),
 	}
 }

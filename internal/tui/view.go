@@ -21,8 +21,15 @@ func (m *Model) View() string {
 	if !m.ready {
 		return "starting upall…"
 	}
-	return lipgloss.JoinVertical(lipgloss.Left,
+	frame := lipgloss.JoinVertical(lipgloss.Left,
 		m.renderHeaderBar(), m.renderBody(), m.renderFooterBar())
+	// Composited last, and only past the !m.ready guard above: a key buffered in
+	// the tty can open the panel before the first WindowSizeMsg, and there is no
+	// frame to draw it on until then.
+	if m.helpOpen {
+		frame = m.helpOverlay(frame)
+	}
+	return frame
 }
 
 // renderBody composes the three panes per layout: wide puts Steps over History
@@ -228,28 +235,27 @@ func (m *Model) footerHints() []footerHint {
 	if m.typing {
 		return []footerHint{{"esc", "stop typing"}, {"⏎", "send"}}
 	}
-	if m.showHelp {
-		return []footerHint{
-			{"tab", "pane"}, {"↑/↓", "move"}, {"⏎", "start/follow"}, {"a", "all"},
-			{"r", "retry"}, {"u", "continue"}, {"R", "re-run"}, {"x", "stop"}, {"i", "type"}, {"w", "wrap"},
-			{"l", "pager"}, {"g/G", "top/bottom"}, {"c", "config"}, {"C", "config dir"},
-			{"?", "help"}, {"q", "quit"},
-		}
-	}
 	var hints []footerHint
-	switch m.focus {
-	case FocusOutput:
-		hints = []footerHint{{"↑/↓", "scroll"}, {"g/G", "top/bottom"}, {"w", "wrap"}, {"l", "pager"}, {"tab", "pane"}, {"q", "quit"}}
-		if m.canType() && !m.awaitInput {
-			hints = append(hints, footerHint{"i", "type"})
-		}
-	case FocusHistory:
-		hints = []footerHint{{"↑/↓", "move"}, {"⏎/→", "expand"}, {"←", "collapse"}, {"w", "wrap"}, {"l", "pager"}, {"tab", "pane"}, {"q", "quit"}}
-	default: // FocusSteps
-		if m.started {
-			hints = []footerHint{{"↑/↓", "move"}, {"⏎", "follow"}, {"a", "all"}, {"r", "retry"}, {"u", "continue"}, {"R", "re-run"}, {"l", "pager"}, {"c", "config"}, {"tab", "pane"}, {"q", "quit"}}
-		} else {
-			hints = []footerHint{{"⏎", "start"}, {"↑/↓", "move"}, {"space", "toggle"}, {"c", "config"}, {"tab", "pane"}, {"q", "quit"}}
+	// The panel replaces the navigation hints but NOT the run-safety lead below:
+	// an early return here would drop `x stop`, `i type password`, and the
+	// self-update note while the panel is up.
+	if m.helpOpen {
+		hints = m.helpFooterHints()
+	} else {
+		switch m.focus {
+		case FocusOutput:
+			hints = []footerHint{{"↑/↓", "scroll"}, {"g/G", "top/bottom"}, {"w", "wrap"}, {"l", "pager"}, {"tab", "pane"}, {"q", "quit"}}
+			if m.canType() && !m.awaitInput {
+				hints = append(hints, footerHint{"i", "type"})
+			}
+		case FocusHistory:
+			hints = []footerHint{{"↑/↓", "move"}, {"⏎/→", "expand"}, {"←", "collapse"}, {"w", "wrap"}, {"l", "pager"}, {"tab", "pane"}, {"q", "quit"}}
+		default: // FocusSteps
+			if m.started {
+				hints = []footerHint{{"↑/↓", "move"}, {"⏎", "follow"}, {"a", "all"}, {"r", "retry"}, {"u", "continue"}, {"R", "re-run"}, {"l", "pager"}, {"c", "config"}, {"tab", "pane"}, {"q", "quit"}}
+			} else {
+				hints = []footerHint{{"⏎", "start"}, {"↑/↓", "move"}, {"space", "toggle"}, {"c", "config"}, {"tab", "pane"}, {"q", "quit"}}
+			}
 		}
 	}
 	// stop is a global action but only meaningful while a run is active; surface it
@@ -270,6 +276,16 @@ func (m *Model) footerHints() []footerHint {
 	// without ever pushing a safety hint off a narrow screen.
 	if m.updateNote != "" {
 		lead = append(lead, footerHint{"", "· " + m.updateNote})
+	}
+	// The panel's filter prompt turns every printable key into text, so the
+	// safety hints have to spell out the extra press: "x stop" would otherwise
+	// name a key that types an x while a run waits on a sudo prompt.
+	if m.helpSearching {
+		for i := range lead {
+			if lead[i].key != "" {
+				lead[i].key = "esc " + lead[i].key
+			}
+		}
 	}
 	return append(lead, hints...)
 }
