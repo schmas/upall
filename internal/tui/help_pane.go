@@ -18,8 +18,9 @@ const (
 	// helpMargin is the columns left uncovered on each side when the frame has
 	// room, so the panes stay visible around the panel.
 	helpMargin = 4
-	helpGutter = 1 // blank column before the key
+	helpGutter = 3 // blank columns between the left border and the key column
 	helpKeyGap = 2 // gap between the key column and the descriptions
+	helpPadR   = 1 // blank column before the right border
 )
 
 // helpRow is one listed binding. keys is what the panel prints (glyphs), while
@@ -177,18 +178,20 @@ func (m *Model) helpLayout(frameW, frameH int) helpView {
 	}
 }
 
-// helpMetrics measures the key column and the widest content line across the
-// whole list.
+// helpMetrics measures the key column and the widest rendered line across the
+// whole list, both in the same terms helpBody lays them out in so the box can
+// never come out a cell tighter than its content.
 func helpMetrics(secs []helpSection) (keyW, contentW int) {
 	for _, s := range secs {
 		for _, r := range s.rows {
 			keyW = max(keyW, ansi.StringWidth(r.keys))
 		}
 	}
+	descCol := helpGutter + keyW + helpKeyGap
 	for _, s := range secs {
-		contentW = max(contentW, ansi.StringWidth(s.title)+8) // "─── " + title + " ───"
+		contentW = max(contentW, descCol+ansi.StringWidth(s.title)+8) // "─── " + title + " ───"
 		for _, r := range s.rows {
-			contentW = max(contentW, keyW+2+ansi.StringWidth(r.desc))
+			contentW = max(contentW, descCol+ansi.StringWidth(r.desc))
 		}
 	}
 	return keyW, contentW
@@ -200,7 +203,7 @@ func helpMetrics(secs []helpSection) (keyW, contentW int) {
 // hi to lo when the two invert, which on a 20-column terminal would hand back
 // a 30-wide panel.
 func helpPanelWidth(contentW, frameW int) int {
-	preferred := max(contentW+4, frameW*helpWidthPct/100)
+	preferred := max(contentW+2+helpPadR, frameW*helpWidthPct/100) // +2 borders
 	limit := min(frameW, helpMaxW)
 	if frameW >= helpMinW+2*helpMargin {
 		limit = min(limit, frameW-2*helpMargin) // keep the panes visible around it
