@@ -67,9 +67,8 @@ func TestHelpNoMatchRendersWithoutPanic(t *testing.T) {
 	if !strings.Contains(ansi.Strip(view), `no match for "zzzznope"`) {
 		t.Errorf("no-match line missing from the panel:\n%s", ansi.Strip(view))
 	}
-	body := m.helpLayout(m.width, m.height).body
-	if len(body) != 1 {
-		t.Errorf("no-match body = %d lines, want 1", len(body))
+	if lines := m.helpLayout(m.width, m.height).lines; len(lines) != 1 {
+		t.Errorf("no-match body = %d lines, want 1", len(lines))
 	}
 }
 
@@ -106,8 +105,13 @@ func TestHelpSearchEnterKeepsFilter(t *testing.T) {
 	if m.helpQuery != "retry" {
 		t.Errorf("enter should keep the filter, query = %q", m.helpQuery)
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "/retry") {
-		t.Error("a kept filter should still show in the border")
+	// The prompt is gone, so the kept filter shows as a smaller listed total.
+	v := m.helpLayout(m.width, m.height)
+	if all := countRows(m.keys.helpSections()); v.shown == 0 || v.shown >= all {
+		t.Errorf("kept filter lists %d of %d bindings", v.shown, all)
+	}
+	if !strings.Contains(ansi.Strip(m.View()), m.helpCount(v)) {
+		t.Errorf("border is missing the count %q", m.helpCount(v))
 	}
 
 	// Reopening starts clean.
@@ -185,8 +189,8 @@ func TestHelpSearchSanitizesInput(t *testing.T) {
 	if n := len([]rune(m.helpQuery)); n != helpQueryMax {
 		t.Errorf("query length = %d, want it capped at %d", n, helpQueryMax)
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "/"+strings.Repeat("z", 10)) {
-		t.Error("a capped query should still be visible in the border")
+	if !strings.Contains(footerText(m), "Filter: "+strings.Repeat("z", 10)) {
+		t.Error("a capped query should still be visible in the footer prompt")
 	}
 }
 
@@ -224,28 +228,28 @@ func TestHelpSearchScrollsWithoutResettingOffset(t *testing.T) {
 	pressRune(m, '?')
 	typeQuery(m, "e") // matches far more rows than the viewport holds
 
-	total, visible := m.helpScrollBounds()
-	if total <= visible {
-		t.Fatalf("test needs a scrollable filtered body: %d lines in %d rows", total, visible)
+	shown, visible := m.helpScrollBounds()
+	if shown <= visible {
+		t.Fatalf("test needs a scrollable filtered list: %d bindings in %d rows", shown, visible)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if m.helpOffset != 1 {
-		t.Fatalf("down inside the prompt: offset = %d, want 1", m.helpOffset)
+	if m.helpCursor != 1 {
+		t.Fatalf("down inside the prompt: cursor = %d, want 1", m.helpCursor)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
-	if m.helpOffset <= 1 {
-		t.Errorf("pgdown inside the prompt did not scroll: offset = %d", m.helpOffset)
+	if m.helpCursor <= 1 {
+		t.Errorf("pgdown inside the prompt did not move: cursor = %d", m.helpCursor)
 	}
-	// A key that leaves the query alone must not scroll back to the top.
-	scrolled := m.helpOffset
+	// A key that leaves the query alone must not jump back to the top.
+	moved := m.helpCursor
 	m.Update(tea.KeyMsg{Type: tea.KeyHome})
-	if m.helpOffset != scrolled {
-		t.Errorf("an unrelated key reset the offset: %d, want %d", m.helpOffset, scrolled)
+	if m.helpCursor != moved {
+		t.Errorf("an unrelated key reset the cursor: %d, want %d", m.helpCursor, moved)
 	}
 	// Editing the query does reset it.
 	m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
-	if m.helpOffset != 0 {
-		t.Errorf("a query change should reset the offset, got %d", m.helpOffset)
+	if m.helpCursor != 0 || m.helpOffset != 0 {
+		t.Errorf("a query change should reset the selection, got %d/%d", m.helpCursor, m.helpOffset)
 	}
 }
 

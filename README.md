@@ -150,7 +150,7 @@ key below is rebindable via `[keys]` in `config.toml`.
 | `l` | Open the selected log in the pager | Steps / History |
 | `c` / `C` | Open `config.toml` / the config folder | any |
 | `U` | Self-update: re-check if needed, then confirm, download, replace, and restart in place | any (when idle) |
-| `?` | Open the Keybindings panel (`↑`/`↓` scroll, `/` search, `esc` close) | any |
+| `?` | Open the Keybindings panel (`↑`/`↓` select, `⏎` run, `/` search, `esc` close) | any |
 | `x` | Stop the current run and stay in the TUI (no-op when idle) | any |
 | `i` | Type mode: forward keystrokes to the running step (e.g. a sudo password) | any (during a run) |
 | `esc` | Exit type mode back to normal navigation | Output (typing) |
@@ -167,17 +167,25 @@ clicks load immediately. Clicking a run header expands/collapses it; clicking a
 step opens its log.
 
 `?` opens a floating **Keybindings** panel over the layout, grouped into
-sections and scrollable with `↑`/`↓`, `g`/`G`, PgUp/PgDn and the mouse wheel.
-Every key it prints comes from your live bindings, so a `[keys]` rebind shows
-through. `?` or `esc` closes it; `q`/`ctrl-c` still quit upall from inside it,
-and `x` (stop) and `i` (type) keep working so an open panel can never hide or
-block a running step's password prompt.
+sections. Move the selection with `↑`/`↓`, `g`/`G`, PgUp/PgDn or the mouse
+wheel, and press `⏎` to run the highlighted binding — it does exactly what
+typing that key would have done, so an action that is unavailable right now
+stays unavailable. The bottom-right of the border tracks the selection
+(`6 of 29`). Every key the panel prints comes from your live bindings, so a
+`[keys]` rebind shows through.
 
-`/` inside the panel filters the list as you type, matching descriptions, the
-keys as shown, and the underlying key names (searching `enter` finds the `⏎`
-rows). In the prompt one `esc` clears the filter and leaves it, `⏎` leaves it
-and keeps the filter, and every printable key is text — including `q`, so only
-a non-printable quit chord (`ctrl-c` by default) still exits from there.
+`?` or `esc` closes it; `q`/`ctrl-c` still quit upall from inside it, and `x`
+(stop) and `i` (type) keep working so an open panel can never hide or block a
+running step's password prompt.
+
+`/` filters the list as you type, with the prompt on the bottom line. It matches
+descriptions, the keys as shown, the underlying key names (searching `enter`
+finds the `⏎` rows) and the action names from `[keys]` (`retry` finds its row
+even though the description reads "re-run the selected step"). The count follows
+the filter, so `1 of 9` tells you how many bindings matched. In the prompt one
+`esc` clears the filter and leaves it, `⏎` leaves it and keeps the filter, and
+every printable key is text — including `q`, so only a non-printable quit chord
+(`ctrl-c` by default) still exits from there.
 
 Plain streaming is used automatically for a non-TTY stdout, `--plain`, or `NO_COLOR`.
 

@@ -60,9 +60,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Action == tea.MouseActionPress {
 				switch msg.Button {
 				case tea.MouseButtonWheelUp:
-					m.scrollHelp(-1)
+					m.moveHelpCursor(-1)
 				case tea.MouseButtonWheelDown:
-					m.scrollHelp(+1)
+					m.moveHelpCursor(+1)
 				}
 			}
 			return m, nil
@@ -231,7 +231,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, m.keys.Help):
 		m.helpOpen = true
-		m.helpOffset = 0
+		m.helpCursor, m.helpOffset = 0, 0
 		return m, nil
 	case key.Matches(msg, m.keys.Wrap):
 		m.wrap = !m.wrap
@@ -277,7 +277,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // does not recognise is swallowed, so no key leaks through to the panes behind
 // the panel. Quit never reaches here (handleKey answers it first).
 func (m *Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	total, visible := m.helpScrollBounds()
+	shown, visible := m.helpScrollBounds()
 	switch {
 	// '/' is a fixed prompt trigger, like esc and the update prompt's y/n, and
 	// it is checked first so the prompt wins over any action rebound onto it
@@ -301,25 +301,89 @@ func (m *Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.closeHelp()
 			m.enterTypeMode()
 		}
+	// Enter runs the highlighted binding. It is checked before the movement keys
+	// because enter is itself bound to start/follow/expand.
+	case msg.Type == tea.KeyEnter:
+		return m.runHelpRow()
 	case key.Matches(msg, m.keys.Up):
-		m.scrollHelp(-1)
+		m.moveHelpCursor(-1)
 	case key.Matches(msg, m.keys.Down):
-		m.scrollHelp(+1)
+		m.moveHelpCursor(+1)
 	case key.Matches(msg, m.keys.Top):
-		m.helpOffset = 0
+		m.moveHelpCursor(-shown)
 	case key.Matches(msg, m.keys.Bottom):
-		m.helpOffset = max(0, total-visible)
+		m.moveHelpCursor(+shown)
 	case msg.Type == tea.KeyPgUp:
-		m.scrollHelp(-visible)
+		m.moveHelpCursor(-max(1, visible))
 	case msg.Type == tea.KeyPgDown:
-		m.scrollHelp(+visible)
+		m.moveHelpCursor(+max(1, visible))
 	}
 	return m, nil
 }
 
-// helpQueryMax caps the filter length. horizFill DROPS an over-long count
-// rather than truncating it, so an unbounded query would silently vanish from
-// the border while still filtering the list.
+// runHelpRow executes the highlighted binding by closing the panel and feeding
+// the key it names back through the ordinary key path. Dispatching the KEY
+// rather than calling a handler is what keeps this from becoming a second
+// dispatch table that could drift from handleKey — and it means an action
+// behaves exactly as it would have if typed, context gating included.
+func (m *Model) runHelpRow() (tea.Model, tea.Cmd) {
+	r, ok := m.helpRowAt(m.helpCursor)
+	if !ok || !r.runnable || len(r.rawKeys) == 0 {
+		return m, nil // a prompt-key row describes a key; there is nothing to run
+	}
+	press, ok := keyMsgFor(r.rawKeys[0])
+	if !ok {
+		return m, nil
+	}
+	m.closeHelp()
+	return m.handleKey(press)
+}
+
+// namedKeys maps the tea key names that appear in bindings back to their event
+// type. Bubble Tea has no exported parser for its own key names, so this is the
+// inverse of tea.Key.String(); TestKeyMsgForRoundTrips proves it stays true for
+// every default binding.
+var namedKeys = map[string]tea.KeyType{
+	"up":        tea.KeyUp,
+	"down":      tea.KeyDown,
+	"left":      tea.KeyLeft,
+	"right":     tea.KeyRight,
+	"enter":     tea.KeyEnter,
+	"tab":       tea.KeyTab,
+	"shift+tab": tea.KeyShiftTab,
+	"home":      tea.KeyHome,
+	"end":       tea.KeyEnd,
+	"pgup":      tea.KeyPgUp,
+	"pgdown":    tea.KeyPgDown,
+	"esc":       tea.KeyEsc,
+	" ":         tea.KeySpace,
+}
+
+// keyMsgFor turns a bound key name back into the event that triggers it.
+func keyMsgFor(name string) (tea.KeyMsg, bool) {
+	if t, ok := namedKeys[name]; ok {
+		if t == tea.KeySpace {
+			return tea.KeyMsg{Type: t, Runes: []rune{' '}}, true
+		}
+		return tea.KeyMsg{Type: t}, true
+	}
+	// Control chords are the ASCII control codes: ctrl+a is 1 … ctrl+z is 26.
+	// A few of those codes have another name (ctrl+i IS tab), and Bubble Tea
+	// reports that other name, so such a binding never matches a real keypress
+	// either — the dead binding is the user's, not this conversion's.
+	if rest, ok := strings.CutPrefix(name, "ctrl+"); ok {
+		if r := []rune(rest); len(r) == 1 && r[0] >= 'a' && r[0] <= 'z' {
+			return tea.KeyMsg{Type: tea.KeyType(r[0] - 'a' + 1)}, true
+		}
+	}
+	if r := []rune(name); len(r) == 1 {
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: r}, true
+	}
+	return tea.KeyMsg{}, false
+}
+
+// helpQueryMax caps the filter length: an unbounded query would run off the
+// footer prompt while still filtering the list.
 const helpQueryMax = 64
 
 // handleHelpSearchKey drives the panel's filter prompt. esc exits the prompt
@@ -332,13 +396,13 @@ func (m *Model) handleHelpSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Scrolling stays live inside the prompt, matched on key type rather than
 	// the Up/Down bindings: their letter aliases (k/j) are text here.
 	case tea.KeyUp:
-		m.scrollHelp(-1)
+		m.moveHelpCursor(-1)
 	case tea.KeyDown:
-		m.scrollHelp(+1)
+		m.moveHelpCursor(+1)
 	case tea.KeyPgUp:
-		m.scrollHelp(-visible)
+		m.moveHelpCursor(-max(1, visible))
 	case tea.KeyPgDown:
-		m.scrollHelp(+visible)
+		m.moveHelpCursor(+max(1, visible))
 	case tea.KeyEsc:
 		m.helpSearching = false
 		m.helpQuery = ""
@@ -376,10 +440,10 @@ func (m *Model) handleHelpSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.helpQuery = b.String()
 	}
-	// A changed query re-lays the body out, so a stale offset could point past
-	// the end of a shorter list. Scrolling must NOT reset it.
+	// A changed query re-lays the list out, so a stale cursor could point past
+	// the end of a shorter one. Moving the cursor must NOT reset it.
 	if m.helpQuery != before {
-		m.helpOffset = 0
+		m.helpCursor, m.helpOffset = 0, 0
 	}
 	return m, nil
 }
@@ -389,22 +453,30 @@ func (m *Model) handleHelpSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) closeHelp() {
 	m.helpOpen = false
 	m.helpOffset = 0
+	m.helpCursor = 0
 	m.helpSearching = false
 	m.helpQuery = ""
 }
 
-// helpScrollBounds reports the panel's body length and viewport height. It
-// sizes off m.width/m.height, which is close enough to bound an offset; the
-// render measures the real frame and clamps again.
-func (m *Model) helpScrollBounds() (total, visible int) {
+// helpScrollBounds reports how many bindings are listed and how many lines the
+// viewport shows. It sizes off m.width/m.height, which is close enough to bound
+// a cursor; the render measures the real frame and clamps again.
+func (m *Model) helpScrollBounds() (shown, visible int) {
 	v := m.helpLayout(m.width, m.height)
-	return len(v.body), max(0, v.rect.h-2)
+	return v.shown, max(0, v.rect.h-2)
 }
 
-// scrollHelp moves the panel's offset by delta, clamped to its content.
-func (m *Model) scrollHelp(delta int) {
-	total, visible := m.helpScrollBounds()
-	m.helpOffset = clampHelpOffset(m.helpOffset+delta, total, visible)
+// moveHelpCursor steps the selection by delta bindings and scrolls to keep it
+// on screen. Section rules and spacers are skipped, because the cursor indexes
+// bindings — which is also what the "6 of 65" readout counts.
+func (m *Model) moveHelpCursor(delta int) {
+	v := m.helpLayout(m.width, m.height)
+	if v.shown == 0 {
+		m.helpCursor, m.helpOffset = 0, 0
+		return
+	}
+	m.helpCursor = min(max(m.helpCursor+delta, 0), v.shown-1)
+	m.helpOffset = helpScrollTo(v, m.helpCursor, m.helpOffset, max(0, v.rect.h-2))
 }
 
 // handleStepsKey routes keys when the Steps pane is focused: filter cycling,
@@ -960,7 +1032,7 @@ func (m *Model) resize(w, h int) {
 	// A shorter terminal shrinks the panel, so an offset scrolled near the end
 	// of the old geometry has to come back into range.
 	if m.helpOpen {
-		m.scrollHelp(0)
+		m.moveHelpCursor(0)
 	}
 }
 

@@ -37,7 +37,11 @@ func rebindModel(t *testing.T, action string, keys ...string) *Model {
 // helpText renders the panel's body as plain, whitespace-collapsed lines.
 func helpText(m *Model) string {
 	v := m.helpLayout(m.width, m.height)
-	return strings.Join(strings.Fields(ansi.Strip(strings.Join(v.body, "\n"))), " ")
+	texts := make([]string, len(v.lines))
+	for i, l := range v.lines {
+		texts[i] = l.text
+	}
+	return strings.Join(strings.Fields(ansi.Strip(strings.Join(texts, "\n"))), " ")
 }
 
 func TestFormatKeys(t *testing.T) {
@@ -87,6 +91,22 @@ func TestHelpSectionsCoverEveryBinding(t *testing.T) {
 			t.Errorf("binding %s (%q) is in no help section", name, b.Help().Desc)
 		default:
 			t.Errorf("binding %s (%q) is listed more than once", name, b.Help().Desc)
+		}
+	}
+}
+
+// TestHelpSectionsUseKnownActions guards the action names helpSections repeats:
+// a typo would silently make a row unsearchable by the name in config.toml.
+func TestHelpSectionsUseKnownActions(t *testing.T) {
+	known := settings.Defaults().Keys
+	for _, s := range keysFrom(settings.Defaults()).helpSections() {
+		for _, r := range s.rows {
+			if !r.runnable {
+				continue
+			}
+			if _, ok := known[r.action]; !ok {
+				t.Errorf("row %q names action %q, which is not a rebindable action", r.desc, r.action)
+			}
 		}
 	}
 }
@@ -150,23 +170,28 @@ func TestHelpLayoutFitsFrame(t *testing.T) {
 	}
 }
 
-// TestHelpCountIndicator covers the border readout: always present, counted in
-// bindings, and showing what the filter matched.
+// TestHelpCountIndicator covers the bottom-border readout: where the cursor is,
+// out of how many bindings are currently listed.
 func TestHelpCountIndicator(t *testing.T) {
 	m := helpModel(t)
 	total := countRows(m.keys.helpSections())
 
-	if got, want := m.helpCount(helpView{shown: total, total: total}), strconv.Itoa(total); got != want {
-		t.Errorf("unfiltered indicator = %q, want %q", got, want)
+	if got, want := m.helpCount(helpView{shown: total}), "1 of "+strconv.Itoa(total); got != want {
+		t.Errorf("indicator = %q, want %q", got, want)
 	}
-	m.helpQuery = "retry"
-	if got := m.helpCount(helpView{shown: 3, total: total}); got != "/retry · 3 of "+strconv.Itoa(total) {
-		t.Errorf("filtered indicator = %q", got)
+	m.helpCursor = 5
+	if got, want := m.helpCount(helpView{shown: total}), "6 of "+strconv.Itoa(total); got != want {
+		t.Errorf("indicator at cursor 5 = %q, want %q", got, want)
 	}
-	m.helpQuery = strings.Repeat("z", 40)
-	if got := m.helpCount(helpView{shown: 0, total: total}); !strings.Contains(got, "…") ||
-		ansi.StringWidth(got) > helpQueryShown+18 {
-		t.Errorf("a long query should be display-truncated, got %q", got)
+	// Filtering changes the total, so the same readout doubles as a match count.
+	if got := m.helpCount(helpView{shown: 7}); got != "6 of 7" {
+		t.Errorf("filtered indicator = %q, want \"6 of 7\"", got)
+	}
+	if got := m.helpCount(helpView{shown: 3}); got != "3 of 3" {
+		t.Errorf("cursor past a shorter list should clamp, got %q", got)
+	}
+	if got := m.helpCount(helpView{shown: 0}); got != "0 of 0" {
+		t.Errorf("no-match indicator = %q", got)
 	}
 }
 
@@ -179,12 +204,16 @@ func TestHelpCountIsAlwaysVisible(t *testing.T) {
 	pressRune(m, '?')
 	total := countRows(m.keys.helpSections())
 
-	if view := ansi.Strip(m.View()); !strings.Contains(view, strconv.Itoa(total)) {
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "1 of "+strconv.Itoa(total)) {
 		t.Errorf("border is missing the %d-binding count:\n%s", total, view)
 	}
 	typeQuery(m, "retry")
-	if view := ansi.Strip(m.View()); !strings.Contains(view, "of "+strconv.Itoa(total)) {
-		t.Errorf("border is missing the filtered count:\n%s", view)
+	v := m.helpLayout(m.width, m.height)
+	if v.shown == 0 || v.shown >= total {
+		t.Fatalf("filter matched %d of %d bindings", v.shown, total)
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "1 of "+strconv.Itoa(v.shown)) {
+		t.Errorf("border count did not follow the filter:\n%s", view)
 	}
 }
 
@@ -221,12 +250,14 @@ func TestHelpPanelIsWide(t *testing.T) {
 }
 
 func TestHelpScrollbarThumbTracksOffset(t *testing.T) {
-	m := helpModel(t)
-	total, visible := m.helpScrollBounds()
-	if total <= visible {
-		t.Fatalf("test needs a scrollable panel: %d lines in %d rows", total, visible)
+	m, _, _ := testModel(demoSteps())
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	v := m.helpLayout(m.width, m.height)
+	lines, visible := len(v.lines), v.rect.h-2
+	if lines <= visible {
+		t.Fatalf("test needs a scrollable panel: %d lines in %d rows", lines, visible)
 	}
-	if scrollbarThumb(visible, total, visible, 0) == nil {
+	if scrollbarThumb(visible, lines, visible, 0) == nil {
 		t.Error("scrollable panel should carry a thumb")
 	}
 	if scrollbarThumb(visible, visible, visible, 0) != nil {

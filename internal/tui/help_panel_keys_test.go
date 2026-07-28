@@ -158,40 +158,64 @@ func TestHelpKeyIsSwallowedByUpdateModal(t *testing.T) {
 	}
 }
 
-func TestHelpPanelScrolling(t *testing.T) {
+// TestHelpPanelNavigation drives the cursor, which is what the bottom-border
+// readout counts and what enter acts on.
+func TestHelpPanelNavigation(t *testing.T) {
 	m, _, _ := testModel(demoSteps())
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 20}) // short enough that the list scrolls
 	pressRune(m, '?')
-	total, visible := m.helpScrollBounds()
-	if total <= visible {
-		t.Fatalf("test needs a scrollable panel: %d lines in %d rows", total, visible)
+	shown, visible := m.helpScrollBounds()
+	if shown <= visible {
+		t.Fatalf("test needs a scrollable panel: %d bindings in %d rows", shown, visible)
 	}
-	maxOff := total - visible
 
 	m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if m.helpOffset != 1 {
-		t.Errorf("down: offset = %d, want 1", m.helpOffset)
+	if m.helpCursor != 1 {
+		t.Errorf("down: cursor = %d, want 1", m.helpCursor)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	m.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if m.helpOffset != 0 {
-		t.Errorf("up past the top: offset = %d, want 0", m.helpOffset)
+	if m.helpCursor != 0 {
+		t.Errorf("up past the top: cursor = %d, want 0", m.helpCursor)
 	}
 	pressRune(m, 'G')
-	if m.helpOffset != maxOff {
-		t.Errorf("bottom: offset = %d, want %d", m.helpOffset, maxOff)
+	if m.helpCursor != shown-1 {
+		t.Errorf("bottom: cursor = %d, want %d", m.helpCursor, shown-1)
+	}
+	if m.helpOffset == 0 {
+		t.Error("jumping to the last binding should have scrolled the panel")
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
-	if m.helpOffset != maxOff {
-		t.Errorf("pgdown past the end: offset = %d, want %d", m.helpOffset, maxOff)
+	if m.helpCursor != shown-1 {
+		t.Errorf("pgdown past the end: cursor = %d, want %d", m.helpCursor, shown-1)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
-	if m.helpOffset >= maxOff {
-		t.Errorf("pgup did not move: offset = %d", m.helpOffset)
+	if m.helpCursor >= shown-1 {
+		t.Errorf("pgup did not move: cursor = %d", m.helpCursor)
 	}
 	pressRune(m, 'g')
-	if m.helpOffset != 0 {
-		t.Errorf("top: offset = %d, want 0", m.helpOffset)
+	if m.helpCursor != 0 || m.helpOffset != 0 {
+		t.Errorf("top: cursor = %d offset = %d, want 0/0", m.helpCursor, m.helpOffset)
+	}
+}
+
+// TestHelpCursorStaysVisible proves the viewport follows the selection rather
+// than the selection disappearing off the bottom.
+func TestHelpCursorStaysVisible(t *testing.T) {
+	m, _, _ := testModel(demoSteps())
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	pressRune(m, '?')
+	shown, _ := m.helpScrollBounds()
+
+	for i := 0; i < shown; i++ {
+		v := m.helpLayout(m.width, m.height)
+		visible := v.rect.h - 2
+		line := lineOfRow(v.lines, m.helpCursor)
+		if line < m.helpOffset || line >= m.helpOffset+visible {
+			t.Fatalf("cursor %d (line %d) outside viewport [%d,%d)",
+				m.helpCursor, line, m.helpOffset, m.helpOffset+visible)
+		}
+		m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
 }
 
@@ -202,12 +226,12 @@ func TestHelpPanelWheelScrolls(t *testing.T) {
 	focus := m.focus
 
 	m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
-	if m.helpOffset == 0 {
-		t.Error("wheel down should scroll the panel")
+	if m.helpCursor == 0 {
+		t.Error("wheel down should move the selection")
 	}
 	m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
-	if m.helpOffset != 0 {
-		t.Error("wheel up should scroll back")
+	if m.helpCursor != 0 {
+		t.Error("wheel up should move it back")
 	}
 	m.Update(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 1, Y: 4})
 	if m.focus != focus {
@@ -227,10 +251,13 @@ func TestHelpOffsetSurvivesResize(t *testing.T) {
 	}
 
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 60})
-	total, visible := m.helpScrollBounds()
-	if m.helpOffset > max(0, total-visible) {
+	v := m.helpLayout(m.width, m.height)
+	if m.helpOffset > max(0, len(v.lines)-(v.rect.h-2)) {
 		t.Errorf("offset %d out of range after resize (%d lines in %d rows)",
-			m.helpOffset, total, visible)
+			m.helpOffset, len(v.lines), v.rect.h-2)
+	}
+	if m.helpCursor >= v.shown {
+		t.Errorf("cursor %d past the %d listed bindings after resize", m.helpCursor, v.shown)
 	}
 }
 

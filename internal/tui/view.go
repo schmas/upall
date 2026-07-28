@@ -311,6 +311,15 @@ func (m *Model) footerLeft() string {
 		return s
 	}
 	var b strings.Builder
+	// The filter prompt leads the footer, on the bottom line, the way lazygit
+	// puts its filter there: the query used to live in the panel's top border,
+	// where it read as a label rather than as the place typing lands.
+	if m.helpSearching {
+		b.WriteString(m.st.selected.Render("Filter: "))
+		b.WriteString(m.helpQuery)
+		b.WriteString(m.st.cursor.Render(" ")) // block caret
+		b.WriteString("  ")
+	}
 	for i, h := range m.footerHints() {
 		if i > 0 {
 			b.WriteString("  ")
