@@ -57,9 +57,23 @@ func main() {
 		fmt.Fprintf(os.Stderr, "upall: created default config at %s\n", settings.ConfigPath())
 	}
 
+	// Getting this far proves the current binary works, so a previous
+	// self-update's rollback copy can go.
+	cleanupPreviousUpdate()
+
 	set, err := settings.Load()
 	if err != nil {
 		fail(err)
+	}
+
+	// The update flags need the loaded settings (for the [update] kill switch
+	// and the check interval) but no steps at all, so they sit between the two.
+	switch {
+	case o.checkUpdate:
+		os.Exit(runCheckUpdate(context.Background(), os.Stdout, os.Stderr, set, version))
+	case o.doUpdate:
+		stdinTTY := term.IsTerminal(int(os.Stdin.Fd()))
+		os.Exit(runDoUpdate(context.Background(), os.Stdin, os.Stdout, os.Stderr, o, set, version, stdinTTY))
 	}
 
 	plat := platform.Detect()
@@ -132,12 +146,25 @@ func run(steps []engine.Step, plainFlag bool, set settings.Settings, version str
 	// Plain mode: Ctrl-C / SIGTERM cancels the run and its child.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// Plain mode owns the passive version check: the TUI runs its own single
+	// check from Init(), so a TUI launch must not fire a second one here. The
+	// goroutine runs alongside the steps and never delays them.
+	var updateCh <-chan updateCheckResult
+	if set.Update.Enabled {
+		updateCh = startPassiveCheck(version, set)
+	}
+
 	sink := plain.New(steps, os.Stdout, false, runDir, set.Notify.Enabled)
 	sink.Begin(fmt.Sprintf("upall %s", version))
 	runner := engine.NewRunner(runDir, sink)
 	runner.DefaultShell = set.Run.Shell
 	runner.RunAll(ctx, steps)
-	return sink.End("upall")
+
+	// Summary first, then the update notice as a clearly separate trailing
+	// line on stderr, so anything parsing plain-mode step output is unaffected.
+	code := sink.End("upall")
+	reportPassiveCheck(os.Stderr, updateCh)
+	return code
 }
 
 func fail(err error) {

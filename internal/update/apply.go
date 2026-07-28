@@ -241,6 +241,12 @@ func CleanupOld(exePath string) error {
 	return nil
 }
 
+// ExePath resolves the running binary the same way Apply does, so a caller
+// wiring up CleanupOld points at the same directory Apply writes to.
+func ExePath() (string, error) {
+	return resolveExePath()
+}
+
 // defaultExePath resolves the running binary, following a symlink if the
 // install path is one (chezmoi may or may not symlink — resolve either way).
 func defaultExePath() (string, error) {

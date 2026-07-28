@@ -13,6 +13,10 @@ The dashboard has three titled, focus-highlighted panes — **Steps** (with
 read-only browser of past runs), and **Output** — plus a config layer for keys,
 theme, history location, and behavior (`$XDG_CONFIG_HOME/upall/config.toml`).
 
+`upall` also updates itself: it notices a newer GitHub release on launch and
+`--update` (or `U` in the TUI) replaces the running binary in place after a
+confirm prompt. See [Self-update](#self-update).
+
 ## Install
 
 ### Via chezmoi (auto-latest)
@@ -62,9 +66,37 @@ upall --list          List steps (key, label, applies?, detect-ok?).
 upall --plain         Force plain output (no color); still tees logs.
 upall --init-config   Write a commented config.toml with all defaults.
 upall --config-path   Print the resolved config file path.
+upall --check-update  Check for a newer release now (ignores the cache).
+upall --update        Replace upall with the latest release, after a prompt.
+upall --update --yes  Same, without the prompt (for non-interactive use).
 upall --version       Print version.
 upall -h | --help     Show this help.
 ```
+
+### Self-update
+
+`upall` checks GitHub for a newer release on launch, at most once per
+`[update] check_interval` (default 16h), and mentions one in the TUI footer or
+after the plain-mode summary. The check runs alongside your steps and never
+delays them.
+
+**A failed check never fails a run.** No network, a rate-limited API, or a bad
+response prints a one-line reason and nothing else — the run's exit code is
+unaffected. `--check-update` and `--update` exit `1` when they could not reach a
+verdict, distinct from `2` for a usage error (e.g. `--update` with no terminal
+and no `--yes`), so a script can tell "couldn't check" from "wrong invocation".
+
+`--update` downloads the release archive for your platform, verifies its sha256
+against the release's `checksums.txt`, and replaces the running binary with an
+atomic rename. The previous binary is kept as `.upall.old` next to it until the
+next launch, and the new one has to pass a `--version` smoke test or it is
+rolled back — a failed update never leaves you without a working `upall`. Both
+downloads must come from an allowlisted GitHub host over HTTPS. That proves the
+bytes arrived intact from the published release; there is no code signing, so it
+does not vouch for the release itself.
+
+Set `[update] enabled = false` to switch all of it off — the launch check, the
+footer badge, and both flags.
 
 `UPALL_KEEP=N` retains N run-log dirs (default 10; overrides `config.toml`). Every
 step's full output is tee'd to `<history-dir>/<timestamp>/NN-key.log`, and each
