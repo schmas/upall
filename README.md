@@ -150,7 +150,7 @@ key below is rebindable via `[keys]` in `config.toml`.
 | `l` | Open the selected log in the pager | Steps / History |
 | `c` / `C` | Open `config.toml` / the config folder | any |
 | `U` | Self-update: re-check if needed, then confirm, download, replace, and restart in place | any (when idle) |
-| `?` | Toggle the full-key footer | any |
+| `?` | Open the Keybindings panel (`↑`/`↓` scroll, `/` search, `esc` close) | any |
 | `x` | Stop the current run and stay in the TUI (no-op when idle) | any |
 | `i` | Type mode: forward keystrokes to the running step (e.g. a sudo password) | any (during a run) |
 | `esc` | Exit type mode back to normal navigation | Output (typing) |
@@ -165,6 +165,19 @@ in the pager). Moving the cursor with `↑`/`↓` loads the row's log into the O
 pane after a short pause, so skimming past runs never decodes every log; `⏎` and
 clicks load immediately. Clicking a run header expands/collapses it; clicking a
 step opens its log.
+
+`?` opens a floating **Keybindings** panel over the layout, grouped into
+sections and scrollable with `↑`/`↓`, `g`/`G`, PgUp/PgDn and the mouse wheel.
+Every key it prints comes from your live bindings, so a `[keys]` rebind shows
+through. `?` or `esc` closes it; `q`/`ctrl-c` still quit upall from inside it,
+and `x` (stop) and `i` (type) keep working so an open panel can never hide or
+block a running step's password prompt.
+
+`/` inside the panel filters the list as you type, matching descriptions, the
+keys as shown, and the underlying key names (searching `enter` finds the `⏎`
+rows). In the prompt one `esc` clears the filter and leaves it, `⏎` leaves it
+and keeps the filter, and every printable key is text — including `q`, so only
+a non-printable quit chord (`ctrl-c` by default) still exits from there.
 
 Plain streaming is used automatically for a non-TTY stdout, `--plain`, or `NO_COLOR`.
 
@@ -216,7 +229,12 @@ host without bash; a per-step `shell` is used verbatim.
 Rebindable actions: `up, down, top, bottom, start, follow, all-logs, retry,
 continue, restart, pager, stop, type, quit, focus-next, focus-prev, filter-next,
 filter-prev, toggle, expand, collapse, wrap, open-config, open-config-dir,
-self-update`.
+self-update, help`.
+
+Action names are validated, but keys are not checked for uniqueness: binding an
+action to a key an earlier-dispatched action already owns silently shadows it
+(`help = ["x"]` stops the run instead of opening the panel). Some keys are
+shared on purpose — `enter` drives start, follow and expand.
 
 `self-update` (default `U`) checks for a newer release and, after a confirm
 prompt, replaces the running binary in place. `[update] enabled = false`
