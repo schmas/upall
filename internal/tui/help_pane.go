@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -11,10 +12,16 @@ import (
 
 const (
 	helpTitle = "Keybindings"
-	helpMinW  = 30 // preferred floor, never applied past the frame's own width
-	helpMaxW  = 72
-	// helpQueryShown caps the query as drawn in the border, so it still fits
-	// the count slot alongside the position indicator on a narrow terminal.
+	helpMinW  = 30  // preferred floor, never applied past the frame's own width
+	helpMaxW  = 100 // absolute ceiling, so the list stays readable on a wide screen
+	// helpWidthPct is the share of the frame the panel prefers to take, which is
+	// what makes it read as a panel rather than a tooltip on a wide terminal.
+	helpWidthPct = 70
+	// helpMargin is the columns left uncovered on each side when the frame has
+	// room, so the panes stay visible around the panel.
+	helpMargin = 4
+	// helpQueryShown caps the query as drawn in the border, so it still fits the
+	// count slot alongside the match count on a narrow terminal.
 	helpQueryShown = 20
 )
 
@@ -31,6 +38,16 @@ type helpRow struct {
 type helpSection struct {
 	title string
 	rows  []helpRow
+}
+
+// helpView is one laid-out panel: the body to draw, the box to draw it in, and
+// the row counts behind the border's indicator. shown and total are counted in
+// BINDINGS rather than body lines — "12 of 46" answers what the filter did,
+// which a line count (section rules and spacers included) cannot.
+type helpView struct {
+	body         []string
+	rect         rect
+	shown, total int
 }
 
 // keyGlyphs renders tea key names the way the footer already writes them.
@@ -95,15 +112,41 @@ func (k keyMap) helpSections() []helpSection {
 // Callers: helpOverlay (with the measured frame) and the scroll handlers (with
 // m.width/m.height, close enough to bound an offset; the render clamps again
 // and is authoritative).
-func (m *Model) helpLayout(frameW, frameH int) ([]string, rect) {
-	secs := filterSections(m.keys.helpSections(), m.helpQuery)
+func (m *Model) helpLayout(frameW, frameH int) helpView {
+	all := m.keys.helpSections()
 
-	keyW, contentW := 0, 0
-	noMatch := ""
+	// Every dimension is measured from the FULL list, so filtering changes what
+	// the panel contains and never how big it is or where its key column sits.
+	// A box that resized under the cursor while typing would be unreadable.
+	keyW, contentW := helpMetrics(all)
+	panelW := helpPanelWidth(contentW, frameW)
+	panelH := min(helpBodyLen(all)+2, max(3, frameH-2))
+	panelH = min(panelH, max(2, frameH))
+
+	secs := filterSections(all, m.helpQuery)
+	var body []string
 	if len(secs) == 0 {
-		noMatch = fmt.Sprintf("no match for %q", m.helpQuery)
-		contentW = ansi.StringWidth(noMatch) + 1
+		body = []string{" " + m.st.muted.Render(fmt.Sprintf("no match for %q", m.helpQuery))}
+	} else {
+		body = helpBody(secs, keyW, panelW-2, m.st)
 	}
+
+	return helpView{
+		body:  body,
+		shown: countRows(secs),
+		total: countRows(all),
+		rect: rect{
+			x: max(0, (frameW-panelW)/2),
+			y: max(0, (frameH-panelH)/2),
+			w: panelW,
+			h: panelH,
+		},
+	}
+}
+
+// helpMetrics measures the key column and the widest content line across the
+// whole list.
+func helpMetrics(secs []helpSection) (keyW, contentW int) {
 	for _, s := range secs {
 		for _, r := range s.rows {
 			keyW = max(keyW, ansi.StringWidth(r.keys))
@@ -115,29 +158,42 @@ func (m *Model) helpLayout(frameW, frameH int) ([]string, rect) {
 			contentW = max(contentW, keyW+2+ansi.StringWidth(r.desc))
 		}
 	}
+	return keyW, contentW
+}
 
-	// The cap always wins. clampInt is deliberately avoided here: it raises hi
-	// to lo when the two invert, which on a 20-column terminal would hand back
-	// a 30-wide panel.
-	panelW := min(max(contentW+4, min(helpMinW, frameW)), min(frameW, helpMaxW))
-	panelW = max(panelW, 2)
-
-	var body []string
-	if noMatch != "" {
-		body = []string{" " + m.st.muted.Render(noMatch)}
-	} else {
-		body = helpBody(secs, keyW, panelW-2, m.st)
+// helpPanelWidth sizes the box: at least as wide as its content, and otherwise
+// a generous share of the frame so it reads as a panel rather than a tooltip.
+// The cap always wins — clampInt is deliberately avoided here, since it raises
+// hi to lo when the two invert, which on a 20-column terminal would hand back
+// a 30-wide panel.
+func helpPanelWidth(contentW, frameW int) int {
+	preferred := max(contentW+4, frameW*helpWidthPct/100)
+	limit := min(frameW, helpMaxW)
+	if frameW >= helpMinW+2*helpMargin {
+		limit = min(limit, frameW-2*helpMargin) // keep the panes visible around it
 	}
+	return max(min(max(preferred, min(helpMinW, frameW)), limit), 2)
+}
 
-	panelH := min(len(body)+2, max(3, frameH-2))
-	panelH = min(panelH, max(2, frameH))
-
-	return body, rect{
-		x: max(0, (frameW-panelW)/2),
-		y: max(0, (frameH-panelH)/2),
-		w: panelW,
-		h: panelH,
+// helpBodyLen is the line count helpBody would produce, without rendering it:
+// one rule plus one line per row per section, and a spacer between sections.
+func helpBodyLen(secs []helpSection) int {
+	n := 0
+	for i, s := range secs {
+		if i > 0 {
+			n++
+		}
+		n += 1 + len(s.rows)
 	}
+	return n
+}
+
+func countRows(secs []helpSection) int {
+	n := 0
+	for _, s := range secs {
+		n += len(s.rows)
+	}
+	return n
 }
 
 // helpBody lays the sections out as inner box lines: a centered section rule,
@@ -164,7 +220,8 @@ func helpBody(secs []helpSection, keyW, innerW int, st styles) []string {
 // unchanged in line count and per-line width (see overlay).
 func (m *Model) helpOverlay(frame string) string {
 	frameW, frameH := frameSize(frame)
-	body, r := m.helpLayout(frameW, frameH)
+	v := m.helpLayout(frameW, frameH)
+	body, r := v.body, v.rect
 
 	visible := max(0, r.h-2)
 	off := clampHelpOffset(m.helpOffset, len(body), visible)
@@ -174,7 +231,7 @@ func (m *Model) helpOverlay(frame string) string {
 	end := min(off+visible, len(body))
 	shown := body[off:end]
 
-	box := titledBox(helpTitle, m.helpCount(off, end, len(body), visible),
+	box := titledBox(helpTitle, m.helpCount(v),
 		strings.Join(shown, "\n"), true, r.w, r.h, m.st,
 		scrollbarThumb(visible, len(body), visible, off))
 	return overlay(frame, box, r.x, r.y)
@@ -253,26 +310,23 @@ func rowMatches(r helpRow, lowerQuery string) bool {
 	return false
 }
 
-// helpCount is the top-border indicator: the active filter and the visible
-// slice of the body. The position is suppressed when everything fits, so a
-// short list carries no noise.
-func (m *Model) helpCount(off, end, total, visible int) string {
-	pos := ""
-	if visible > 0 && total > visible {
-		pos = fmt.Sprintf("%d–%d of %d", off+1, end, total)
+// helpCount is the top-border indicator. It is always present — how many
+// bindings the panel is listing is worth knowing before you start filtering,
+// and it is the readout that answers what a filter just did. Scroll position
+// is the scrollbar thumb's job, not this slot's.
+func (m *Model) helpCount(v helpView) string {
+	count := strconv.Itoa(v.total)
+	if v.shown != v.total {
+		count = fmt.Sprintf("%d of %d", v.shown, v.total)
 	}
 	if !m.helpSearching && m.helpQuery == "" {
-		return pos
+		return count
 	}
 	// horizFill DROPS an over-long count instead of truncating it, so a long
 	// query would vanish from the border while still filtering the list. Cap
 	// what is DISPLAYED (the query itself is capped separately, at a length
 	// that still exceeds a narrow border slot).
-	q := "/" + ansi.Truncate(m.helpQuery, helpQueryShown, "…")
-	if pos == "" {
-		return q
-	}
-	return q + " · " + pos
+	return "/" + ansi.Truncate(m.helpQuery, helpQueryShown, "…") + " · " + count
 }
 
 // clampHelpOffset holds an offset inside the scrollable range.

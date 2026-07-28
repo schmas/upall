@@ -2,6 +2,7 @@ package tui
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -35,8 +36,8 @@ func rebindModel(t *testing.T, action string, keys ...string) *Model {
 
 // helpText renders the panel's body as plain, whitespace-collapsed lines.
 func helpText(m *Model) string {
-	body, _ := m.helpLayout(m.width, m.height)
-	return strings.Join(strings.Fields(ansi.Strip(strings.Join(body, "\n"))), " ")
+	v := m.helpLayout(m.width, m.height)
+	return strings.Join(strings.Fields(ansi.Strip(strings.Join(v.body, "\n"))), " ")
 }
 
 func TestFormatKeys(t *testing.T) {
@@ -136,7 +137,7 @@ func TestHelpLayoutFitsFrame(t *testing.T) {
 	m, _, _ := testModel(demoSteps())
 	sizeUp(m)
 	for _, f := range []struct{ w, h int }{{200, 50}, {80, 24}, {60, 20}, {34, 10}, {20, 6}} {
-		_, r := m.helpLayout(f.w, f.h)
+		r := m.helpLayout(f.w, f.h).rect
 		if r.w > f.w {
 			t.Errorf("%dx%d: panel width %d exceeds the frame", f.w, f.h, r.w)
 		}
@@ -149,19 +150,73 @@ func TestHelpLayoutFitsFrame(t *testing.T) {
 	}
 }
 
+// TestHelpCountIndicator covers the border readout: always present, counted in
+// bindings, and showing what the filter matched.
 func TestHelpCountIndicator(t *testing.T) {
 	m := helpModel(t)
-	if got := m.helpCount(0, 10, 42, 10); got != "1–10 of 42" {
-		t.Errorf("indicator = %q", got)
+	total := countRows(m.keys.helpSections())
+
+	if got, want := m.helpCount(helpView{shown: total, total: total}), strconv.Itoa(total); got != want {
+		t.Errorf("unfiltered indicator = %q, want %q", got, want)
 	}
-	if got := m.helpCount(32, 42, 42, 10); got != "33–42 of 42" {
-		t.Errorf("indicator at the end = %q", got)
+	m.helpQuery = "retry"
+	if got := m.helpCount(helpView{shown: 3, total: total}); got != "/retry · 3 of "+strconv.Itoa(total) {
+		t.Errorf("filtered indicator = %q", got)
 	}
-	if got := m.helpCount(0, 8, 8, 20); got != "" {
-		t.Errorf("indicator should be suppressed when everything fits, got %q", got)
+	m.helpQuery = strings.Repeat("z", 40)
+	if got := m.helpCount(helpView{shown: 0, total: total}); !strings.Contains(got, "…") ||
+		ansi.StringWidth(got) > helpQueryShown+18 {
+		t.Errorf("a long query should be display-truncated, got %q", got)
 	}
-	if got := m.helpCount(0, 0, 5, 0); got != "" {
-		t.Errorf("indicator should be suppressed with no viewport, got %q", got)
+}
+
+// TestHelpCountIsAlwaysVisible proves the count reaches the rendered border in
+// both states — the earlier version suppressed it whenever the list fit, which
+// is most terminals.
+func TestHelpCountIsAlwaysVisible(t *testing.T) {
+	m, _, _ := testModel(demoSteps())
+	m.Update(tea.WindowSizeMsg{Width: 140, Height: 60}) // tall enough to fit everything
+	pressRune(m, '?')
+	total := countRows(m.keys.helpSections())
+
+	if view := ansi.Strip(m.View()); !strings.Contains(view, strconv.Itoa(total)) {
+		t.Errorf("border is missing the %d-binding count:\n%s", total, view)
+	}
+	typeQuery(m, "retry")
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "of "+strconv.Itoa(total)) {
+		t.Errorf("border is missing the filtered count:\n%s", view)
+	}
+}
+
+// TestHelpFilterDoesNotResizePanel is the reason geometry is measured off the
+// unfiltered list: a box that shrank as you typed would be unreadable.
+func TestHelpFilterDoesNotResizePanel(t *testing.T) {
+	m, _, _ := testModel(demoSteps())
+	sizeUp(m)
+	pressRune(m, '?')
+	want := m.helpLayout(m.width, m.height).rect
+
+	for _, q := range []string{"r", "retry", "zzzznope"} {
+		m.helpQuery = q
+		if got := m.helpLayout(m.width, m.height).rect; got != want {
+			t.Errorf("query %q moved or resized the panel: %+v, want %+v", q, got, want)
+		}
+	}
+}
+
+// TestHelpPanelIsWide keeps the panel a panel: it should take a real share of a
+// wide frame rather than shrinking to its longest description.
+func TestHelpPanelIsWide(t *testing.T) {
+	m, _, _ := testModel(demoSteps())
+	sizeUp(m)
+	for _, f := range []struct{ w, min int }{{200, helpMaxW - 1}, {120, 80}, {96, 66}} {
+		if got := m.helpLayout(f.w, 40).rect.w; got < f.min {
+			t.Errorf("%d-col frame: panel width %d, want at least %d", f.w, got, f.min)
+		}
+	}
+	// …but it still leaves the panes visible around it.
+	if r := m.helpLayout(120, 40).rect; r.x < helpMargin {
+		t.Errorf("panel should leave a margin, got x=%d w=%d", r.x, r.w)
 	}
 }
 

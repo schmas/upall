@@ -397,8 +397,8 @@ func (m *Model) closeHelp() {
 // sizes off m.width/m.height, which is close enough to bound an offset; the
 // render measures the real frame and clamps again.
 func (m *Model) helpScrollBounds() (total, visible int) {
-	body, r := m.helpLayout(m.width, m.height)
-	return len(body), max(0, r.h-2)
+	v := m.helpLayout(m.width, m.height)
+	return len(v.body), max(0, v.rect.h-2)
 }
 
 // scrollHelp moves the panel's offset by delta, clamped to its content.

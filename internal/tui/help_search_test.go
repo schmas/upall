@@ -67,7 +67,7 @@ func TestHelpNoMatchRendersWithoutPanic(t *testing.T) {
 	if !strings.Contains(ansi.Strip(view), `no match for "zzzznope"`) {
 		t.Errorf("no-match line missing from the panel:\n%s", ansi.Strip(view))
 	}
-	body, _ := m.helpLayout(m.width, m.height)
+	body := m.helpLayout(m.width, m.height).body
 	if len(body) != 1 {
 		t.Errorf("no-match body = %d lines, want 1", len(body))
 	}
