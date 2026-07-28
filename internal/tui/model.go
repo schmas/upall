@@ -110,13 +110,15 @@ type histRow struct {
 	step int // step-child index into run.Steps (histRowStep only)
 }
 
-// updateState is the self-update flow's position: idle, waiting for the user to
-// confirm, or replacing the binary. It is deliberately narrow — it changes the
-// meaning of only the confirm/cancel keys, never the rest of the dashboard's.
+// updateState is the self-update flow's position: idle, running a forced
+// live check, waiting for the user to confirm, or replacing the binary. It is
+// deliberately narrow — it changes the meaning of only the confirm/cancel
+// keys, never the rest of the dashboard's.
 type updateState int
 
 const (
 	updateIdle updateState = iota
+	updateChecking
 	updateConfirming
 	updateApplying
 )
@@ -190,9 +192,11 @@ type Model struct {
 	quitting      bool
 
 	// Self-update state. updateInfo is set only when a newer release exists;
-	// updateErr keeps a failed check discoverable (footer suffix + the reason on
-	// the self-update key) without ever blocking the dashboard. updateNote is a
-	// transient one-liner cleared by the next keypress.
+	// updateErr keeps a failed check discoverable as a quiet footer suffix
+	// without ever blocking the dashboard. The self-update key reveals a failed
+	// check's reason by retrying it (a forced recheck), not by reading this
+	// field directly. updateNote is a transient one-liner cleared by the next
+	// keypress.
 	updateInfo  *selfupdate.Info
 	updateErr   error
 	updateNote  string
@@ -292,19 +296,26 @@ func (m *Model) Init() tea.Cmd {
 	// Plain mode gates its own passive check on !useTUI, so exactly one check
 	// runs per process.
 	if m.set.Update.Enabled {
-		cmds = append(cmds, m.checkUpdateCmd())
+		cmds = append(cmds, m.checkUpdateCmd(false))
 	}
 	return tea.Batch(cmds...)
 }
 
-// checkUpdateCmd runs the cached version check off the update loop and reports
-// the outcome as a message. Everything the goroutine needs is captured before
-// it starts, so it never reads model state concurrently.
-func (m *Model) checkUpdateCmd() tea.Cmd {
-	version, interval := m.version, m.set.Update.CheckInterval
+// checkUpdateCmd runs the version check off the update loop and reports the
+// outcome as a message. forced bypasses the cache freshness gate (interval 0,
+// same as --check-update), used when U triggers a live recheck; the passive
+// launch check leaves the configured interval alone. Everything the goroutine
+// needs is captured before it starts, so it never reads model state
+// concurrently.
+func (m *Model) checkUpdateCmd(forced bool) tea.Cmd {
+	version := m.version
+	interval := m.set.Update.CheckInterval
+	if forced {
+		interval = 0
+	}
 	return func() tea.Msg {
 		info, err := checkForUpdate(version, interval)
-		return updateCheckedMsg{info: info, err: err}
+		return updateCheckedMsg{info: info, err: err, forced: forced}
 	}
 }
 

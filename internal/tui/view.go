@@ -313,6 +313,8 @@ func (m *Model) footerLeft() string {
 // prompt or live download progress. Empty when neither applies.
 func (m *Model) updateBarText() string {
 	switch {
+	case m.updateState == updateChecking:
+		return m.spin.View() + " " + m.st.muted.Render("checking for the latest release…")
 	case m.updateState == updateApplying:
 		return m.st.selected.Render("updating") + " " + m.st.muted.Render(m.updateProgressText())
 	case m.updateState == updateConfirming:

@@ -150,35 +150,141 @@ func TestSelfUpdateKeyIsNoOpWhileRunning(t *testing.T) {
 	}
 }
 
-func TestSelfUpdateKeyRevealsCheckFailure(t *testing.T) {
+// TestSelfUpdateKeyRetriesAfterFailedCheck pins the retry behavior: a failed
+// check must not permanently close the door. Pressing U again fires a fresh
+// forced check instead of only re-showing the stale reason, and a release
+// found this time opens the confirm prompt directly.
+func TestSelfUpdateKeyRetriesAfterFailedCheck(t *testing.T) {
 	m, _, _ := testModel(demoSteps())
 	sizeUp(m)
 	m.Update(updateCheckedMsg{err: errors.New("github api: 403 rate limited")})
 
-	pressKey(m, 'U')
-	if m.updateState != updateIdle {
-		t.Fatal("a failed check must not open the confirm flow")
+	prev := checkForUpdate
+	t.Cleanup(func() { checkForUpdate = prev })
+	checkForUpdate = func(string, time.Duration) (*selfupdate.Info, error) {
+		return availableInfo(), nil
 	}
-	if got := footerText(m); !strings.Contains(got, "403 rate limited") {
-		t.Errorf("the key should reveal the actual reason: %q", got)
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'U'}})
+	if m.updateState != updateChecking {
+		t.Fatalf("U should start a forced check, state = %v", m.updateState)
 	}
-	// The note is transient: the next keypress clears it.
-	pressKey(m, 'a')
-	if got := footerText(m); strings.Contains(got, "403 rate limited") {
-		t.Errorf("note should clear on the next keypress: %q", got)
+	if got := footerText(m); !strings.Contains(got, "checking for the latest release") {
+		t.Errorf("footer should show the checking state: %q", got)
+	}
+
+	msgs := runCmds(cmd)
+	if len(msgs) != 1 {
+		t.Fatalf("forced check should produce exactly one message, got %d", len(msgs))
+	}
+	m.Update(msgs[0])
+	if m.updateState != updateConfirming {
+		t.Fatalf("a release found on retry should open confirm, state = %v", m.updateState)
 	}
 }
 
-func TestSelfUpdateKeyWithNothingAvailable(t *testing.T) {
+// TestSelfUpdateKeyForcesLiveCheck covers U with nothing known yet: it must
+// perform a live (uncached) check and land on a footer note, not an instant
+// "no update available" synthesized from stale state.
+func TestSelfUpdateKeyForcesLiveCheck(t *testing.T) {
 	m, _, _ := testModel(demoSteps())
 	sizeUp(m)
 
-	pressKey(m, 'U')
-	if m.updateState != updateIdle {
-		t.Fatal("no check result means no confirm flow")
+	var gotInterval time.Duration
+	prev := checkForUpdate
+	t.Cleanup(func() { checkForUpdate = prev })
+	checkForUpdate = func(_ string, interval time.Duration) (*selfupdate.Info, error) {
+		gotInterval = interval
+		return &selfupdate.Info{Current: "v1.4.0", Latest: "v1.4.0"}, nil
 	}
-	if got := footerText(m); !strings.Contains(got, "no update available") {
-		t.Errorf("footer should explain the no-op: %q", got)
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'U'}})
+	if m.updateState != updateChecking {
+		t.Fatalf("U with nothing known should start checking, state = %v", m.updateState)
+	}
+	if cmd == nil {
+		t.Fatal("U should return the forced-check command")
+	}
+
+	msgs := runCmds(cmd)
+	for _, msg := range msgs {
+		m.Update(msg)
+	}
+	if gotInterval != 0 {
+		t.Errorf("a forced check must ignore the cache interval, got %v", gotInterval)
+	}
+	if m.updateState != updateIdle {
+		t.Fatalf("up to date should resolve to idle, state = %v", m.updateState)
+	}
+	if got := footerText(m); !strings.Contains(got, "already on v1.4.0") {
+		t.Errorf("footer should report what the live check found: %q", got)
+	}
+}
+
+// TestSelfUpdateKeyIgnoresSecondPressWhileChecking proves U does not fire a
+// second concurrent request while one is already in flight: handleKey routes
+// any key to handleUpdateKey once updateState leaves updateIdle, and
+// handleUpdateKey returns nil for anything but updateConfirming, so
+// pressSelfUpdate itself is never re-entered mid-check.
+func TestSelfUpdateKeyIgnoresSecondPressWhileChecking(t *testing.T) {
+	m, _, _ := testModel(demoSteps())
+	sizeUp(m)
+
+	calls := 0
+	prev := checkForUpdate
+	t.Cleanup(func() { checkForUpdate = prev })
+	checkForUpdate = func(string, time.Duration) (*selfupdate.Info, error) {
+		calls++
+		return nil, nil
+	}
+
+	_, firstCmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'U'}})
+	if firstCmd == nil {
+		t.Fatal("the first press should return the forced-check command")
+	}
+	if m.updateState != updateChecking {
+		t.Fatalf("the first press should enter checking, state = %v", m.updateState)
+	}
+
+	_, secondCmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'U'}})
+	if secondCmd != nil {
+		t.Fatal("a second press mid-check must not return a fresh check command")
+	}
+	if m.updateState != updateChecking {
+		t.Fatalf("a second press mid-check must stay in checking, state = %v", m.updateState)
+	}
+	if calls != 0 {
+		t.Fatal("neither command has been run yet, so the seam must not have been called")
+	}
+}
+
+// TestLateLaunchCheckDoesNotClobberForcedResult covers the race between the
+// passive launch check (Model.Init) and a forced recheck U starts before the
+// launch check has resolved: the forced check's outcome is what the user is
+// waiting on, so a launch-check result landing after it must not overwrite
+// the confirm prompt it opened.
+func TestLateLaunchCheckDoesNotClobberForcedResult(t *testing.T) {
+	m, _, _ := testModel(demoSteps())
+	sizeUp(m)
+
+	pressKey(m, 'U') // starts the forced check; m.updateState == updateChecking
+	m.Update(updateCheckedMsg{info: availableInfo(), forced: true})
+	if m.updateState != updateConfirming {
+		t.Fatalf("forced check should open confirm, state = %v", m.updateState)
+	}
+
+	// The launch check (forced: false, its zero value) finally lands with a
+	// failure. It must be dropped, not shown, since it is no longer the check
+	// the user is looking at.
+	m.Update(updateCheckedMsg{err: errors.New("dial tcp: no route to host")})
+	if m.updateState != updateConfirming {
+		t.Errorf("a late launch-check result must not close the confirm prompt, state = %v", m.updateState)
+	}
+	if m.updateInfo == nil {
+		t.Error("a late launch-check result must not erase the release the forced check found")
+	}
+	if got := footerText(m); !strings.Contains(got, "Update to v1.5.0?") {
+		t.Errorf("confirm prompt should still be showing: %q", got)
 	}
 }
 
@@ -335,7 +441,7 @@ func TestQuitWorksWhileConfirmingAndApplying(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		state updateState
-	}{{"confirming", updateConfirming}, {"applying", updateApplying}} {
+	}{{"checking", updateChecking}, {"confirming", updateConfirming}, {"applying", updateApplying}} {
 		t.Run(tc.name, func(t *testing.T) {
 			m, _, canceled := testModel(demoSteps())
 			sizeUp(m)
@@ -368,6 +474,25 @@ func TestApplyingSwallowsOtherKeys(t *testing.T) {
 	}
 	if m.started || m.running || *launched != 0 || m.focus != FocusSteps {
 		t.Error("no dashboard key should act while applying")
+	}
+}
+
+// TestCheckingSwallowsOtherKeys proves the dashboard's normal bindings cannot
+// fire while a forced check U started is still in flight.
+func TestCheckingSwallowsOtherKeys(t *testing.T) {
+	m, launched, _ := testModel(demoSteps())
+	sizeUp(m)
+	m.updateState = updateChecking
+
+	for _, k := range []tea.KeyMsg{
+		{Type: tea.KeyEnter},
+		{Type: tea.KeyRunes, Runes: []rune("R")},
+		{Type: tea.KeyTab},
+	} {
+		m.Update(k)
+	}
+	if m.started || m.running || *launched != 0 || m.focus != FocusSteps {
+		t.Error("no dashboard key should act while checking")
 	}
 }
 
@@ -464,13 +589,16 @@ func TestMouseIsGatedWhileConfirming(t *testing.T) {
 
 func TestMouseClearsTransientNote(t *testing.T) {
 	m, _, _ := testModel(demoSteps())
+	set := settings.Defaults()
+	set.Update.Enabled = false
+	m.set = set
 	sizeUp(m)
-	pressKey(m, 'U') // "no update available"
-	if !strings.Contains(footerText(m), "no update available") {
+	pressKey(m, 'U') // "self-update is off ([update] enabled = false)"
+	if !strings.Contains(footerText(m), "self-update is off") {
 		t.Fatal("expected the note first")
 	}
 	m.Update(tea.MouseMsg{X: 1, Y: m.stepsRect.y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	if strings.Contains(footerText(m), "no update available") {
+	if strings.Contains(footerText(m), "self-update is off") {
 		t.Error("a click should retire the note like a keypress does")
 	}
 }

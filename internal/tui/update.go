@@ -191,8 +191,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Global keys work regardless of which pane is focused.
 	switch {
 	case key.Matches(msg, m.keys.SelfUpdate):
-		m.pressSelfUpdate()
-		return m, nil
+		return m, m.pressSelfUpdate()
 	case key.Matches(msg, m.keys.Stop):
 		m.stop()
 		return m, nil

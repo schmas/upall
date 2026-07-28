@@ -37,12 +37,15 @@ type pagerDoneMsg struct{ err error }
 
 type tickMsg time.Time
 
-// updateCheckedMsg carries the launch version check's outcome. err is reported
-// in the footer and never fails the TUI: not knowing whether an update exists
-// is not a reason to interrupt a run.
+// updateCheckedMsg carries a version check's outcome, from either the silent
+// launch check or a forced recheck U triggered. err is reported in the footer
+// and never fails the TUI: not knowing whether an update exists is not a
+// reason to interrupt a run. forced distinguishes the two: zero-value false
+// matches the launch check's silent behavior.
 type updateCheckedMsg struct {
-	info *selfupdate.Info
-	err  error
+	info   *selfupdate.Info
+	err    error
+	forced bool
 }
 
 // updateProgress is one download-progress observation, sent from the apply
