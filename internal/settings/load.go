@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -26,6 +27,7 @@ type fileConfig struct {
 	UI      uiTOML              `toml:"ui"`
 	Notify  notifyTOML          `toml:"notify"`
 	Run     runTOML             `toml:"run"`
+	Update  updateTOML          `toml:"update"`
 }
 
 type themeTOML struct {
@@ -54,6 +56,13 @@ type notifyTOML struct {
 
 type runTOML struct {
 	Shell *string `toml:"shell"`
+}
+
+// updateTOML mirrors the step schema's convention of writing durations as Go
+// duration strings ("16h"), parsed on load.
+type updateTOML struct {
+	Enabled       *bool   `toml:"enabled"`
+	CheckInterval *string `toml:"check_interval"`
 }
 
 // ConfigPath is the resolved config file path
@@ -133,6 +142,18 @@ func parse(name string, data []byte) (Settings, error) {
 	setBool(&s.Notify.Enabled, fc.Notify.Enabled)
 
 	setStr(&s.Run.Shell, fc.Run.Shell)
+
+	setBool(&s.Update.Enabled, fc.Update.Enabled)
+	if fc.Update.CheckInterval != nil {
+		d, err := time.ParseDuration(*fc.Update.CheckInterval)
+		if err != nil {
+			return Settings{}, fmt.Errorf("%s: invalid [update] check_interval %q: %w", name, *fc.Update.CheckInterval, err)
+		}
+		if d <= 0 {
+			return Settings{}, fmt.Errorf("%s: invalid [update] check_interval %q: must be positive", name, *fc.Update.CheckInterval)
+		}
+		s.Update.CheckInterval = d
+	}
 
 	return s, nil
 }

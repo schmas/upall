@@ -145,6 +145,10 @@ enabled = true               # desktop notification on a failed run
 
 [run]
 shell = "bash"               # default shell for steps without their own `shell`
+
+[update]
+enabled        = true        # false also disables --check-update / --update
+check_interval = "16h"       # how long a version check is cached
 ```
 
 The step shell resolves as `step.shell` › `[run] shell` (default `bash`) ›
@@ -154,7 +158,12 @@ host without bash; a per-step `shell` is used verbatim.
 
 Rebindable actions: `up, down, top, bottom, start, follow, all-logs, retry,
 continue, restart, pager, stop, type, quit, focus-next, focus-prev, filter-next,
-filter-prev, toggle, expand, collapse, wrap, open-config, open-config-dir`.
+filter-prev, toggle, expand, collapse, wrap, open-config, open-config-dir,
+self-update`.
+
+`self-update` (default `U`) checks for a newer release and, after a confirm
+prompt, replaces the running binary in place. `[update] enabled = false`
+switches it off along with the launch check and the footer badge.
 
 `stop` (default `x`) cancels the active run and leaves the TUI open: the running
 step is marked aborted, steps that had not started stay pending, and the header
