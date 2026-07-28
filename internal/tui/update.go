@@ -36,9 +36,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Type mode is exclusive, like the KeyMsg branch above: a click that
 		// changes focus or selection while typing would silently redirect
 		// keystrokes meant for the running step without ever leaving type mode.
-		if m.typing {
+		// The confirm/apply states are exclusive for the same reason — the mouse
+		// must not be a second, ungated way into the dashboard while a modal
+		// prompt is up or the binary is being replaced.
+		if m.typing || m.updateState != updateIdle {
 			return m, nil
 		}
+		// A click is input too, so it retires a transient note like a key does.
+		m.updateNote = ""
 		return m.handleMouse(msg)
 
 	case startMsg:
@@ -139,6 +144,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case pagerDoneMsg:
 		return m, nil
+
+	case updateCheckedMsg:
+		m.recordUpdateCheck(msg)
+		return m, nil
+
+	case updateProgressMsg:
+		return m, m.recordUpdateProgress(msg)
+
+	case updateAppliedMsg:
+		return m, m.recordUpdateApplied(msg)
 	}
 
 	// Forward anything else (mouse wheel, pgup/pgdn) to the viewport.
@@ -148,15 +163,36 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Global keys work regardless of which pane is focused.
-	switch {
-	case key.Matches(msg, m.keys.Quit):
+	// Quit is checked before everything else, including the self-update states:
+	// backing out with ctrl-c always beats a clean cancel.
+	if key.Matches(msg, m.keys.Quit) {
 		m.quitting = true
 		if m.running && m.activeIdx >= 0 {
 			m.states[m.activeIdx] = engine.StateAborted
 		}
 		m.rc.cancel()
+		// An in-flight download is abandoned on the way out; Run still waits for
+		// the apply goroutine so the exit cannot land mid-replace.
+		m.cancelApply()
 		return m, tea.Quit
+	}
+
+	// Any keypress clears the transient self-update note; a handler below may
+	// set a fresh one.
+	m.updateNote = ""
+
+	// The confirm/apply states own the keyboard next, ahead of the normal
+	// bindings: enter is also bound to start/follow/expand, and while a confirm
+	// prompt is up it must mean "confirm the update" and nothing else.
+	if m.updateState != updateIdle {
+		return m, m.handleUpdateKey(msg)
+	}
+
+	// Global keys work regardless of which pane is focused.
+	switch {
+	case key.Matches(msg, m.keys.SelfUpdate):
+		m.pressSelfUpdate()
+		return m, nil
 	case key.Matches(msg, m.keys.Stop):
 		m.stop()
 		return m, nil

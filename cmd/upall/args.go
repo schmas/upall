@@ -17,11 +17,19 @@ Usage:
   upall --plain         Force plain output (no color); still tees logs.
   upall --init-config   Write a commented config.toml with all defaults.
   upall --config-path   Print the resolved config file path.
+  upall --check-update  Check for a newer release now (ignores the cache).
+  upall --update        Replace upall with the latest release, after a prompt.
+  upall --update --yes  Same, without the prompt (for non-interactive use).
   upall --version       Print version.
   upall -h | --help     Show this help.
 
 Env:
   UPALL_KEEP=N          Retain N run-log dirs (default 10). Overrides config.
+
+Exit codes for --check-update / --update:
+  0  success (up to date, updated, or the prompt was declined)
+  1  could not tell: the check failed, or self-update is disabled in config
+  2  usage error, e.g. --update with no terminal and no --yes
 
 Steps are config-driven. Defaults are embedded; extend or override them with
 TOML in $XDG_CONFIG_HOME/upall/steps.d/ (fallback ~/.config/upall/steps.d/).
@@ -30,14 +38,17 @@ $XDG_CONFIG_HOME/upall/config.toml (see --init-config).
 `
 
 type opts struct {
-	list       bool
-	plain      bool
-	version    bool
-	help       bool
-	initConfig bool
-	force      bool
-	configPath bool
-	selected   []string
+	list        bool
+	plain       bool
+	version     bool
+	help        bool
+	initConfig  bool
+	force       bool
+	configPath  bool
+	checkUpdate bool
+	doUpdate    bool
+	yes         bool
+	selected    []string
 }
 
 // parseArgs parses the flat argv. Steps are positional; anything starting with
@@ -58,6 +69,12 @@ func parseArgs(argv []string) (opts, error) {
 			o.force = true
 		case "--config-path":
 			o.configPath = true
+		case "--check-update":
+			o.checkUpdate = true
+		case "--update":
+			o.doUpdate = true
+		case "--yes", "-y":
+			o.yes = true
 		case "--version", "-V":
 			o.version = true
 		default:

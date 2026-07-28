@@ -7,6 +7,8 @@
 // internal/config.
 package settings
 
+import "time"
+
 // Settings is the fully-resolved configuration after merging the user's
 // config.toml over Defaults(). Every field always has a usable value.
 type Settings struct {
@@ -16,6 +18,7 @@ type Settings struct {
 	UI      UI
 	Notify  Notify
 	Run     Run
+	Update  Update
 }
 
 // Theme holds the TUI's configurable colors. Each is a Lip Gloss color string:
@@ -49,6 +52,15 @@ type Notify struct {
 	Enabled bool
 }
 
+// Update controls the self-update feature. Enabled false switches off the
+// passive launch check, the footer badge, and the explicit update commands
+// alike — not just the background one. CheckInterval is how long a version
+// check is cached before another one hits the network.
+type Update struct {
+	Enabled       bool
+	CheckInterval time.Duration
+}
+
 // Run holds run-execution behavior. Shell is the default shell for steps that
 // do not set their own; a per-step shell wins, and the engine still falls back
 // to bash→sh when the configured shell is not on PATH.
@@ -67,6 +79,7 @@ var knownActions = []string{
 	"filter-next", "filter-prev", "toggle",
 	"expand", "collapse", "wrap",
 	"open-config", "open-config-dir",
+	"self-update",
 }
 
 // isKnownAction reports whether name is a rebindable action.
@@ -107,6 +120,7 @@ func defaultKeys() map[string][]string {
 		"wrap":            {"w"},
 		"open-config":     {"c"},
 		"open-config-dir": {"C"},
+		"self-update":     {"U"},
 	}
 }
 
@@ -131,5 +145,6 @@ func Defaults() Settings {
 		},
 		Notify: Notify{Enabled: true},
 		Run:    Run{Shell: "bash"},
+		Update: Update{Enabled: true, CheckInterval: 16 * time.Hour},
 	}
 }

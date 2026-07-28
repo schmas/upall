@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/schmas/upall/internal/engine"
 )
@@ -86,6 +87,56 @@ func TestParseRunShellOverride(t *testing.T) {
 	}
 	if s.Run.Shell != "bash" {
 		t.Errorf("unset run.shell = %q, want default bash", s.Run.Shell)
+	}
+}
+
+func TestParseUpdateOverrides(t *testing.T) {
+	s, err := parse("config.toml", []byte("schema = 1\n[update]\nenabled = false\ncheck_interval = \"4h\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Update.Enabled {
+		t.Error("update.enabled should be overridden to false")
+	}
+	if s.Update.CheckInterval != 4*time.Hour {
+		t.Errorf("check_interval = %v, want 4h", s.Update.CheckInterval)
+	}
+	// Unset [update] keeps both defaults.
+	s, err = parse("config.toml", []byte("schema = 1\n[ui]\nwrap = false\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.Update.Enabled || s.Update.CheckInterval != 16*time.Hour {
+		t.Errorf("unset update = %+v, want enabled / 16h", s.Update)
+	}
+}
+
+// A bad duration must fail loudly and name the file, like a bad [theme] value
+// or an unknown [keys] action already does — never fall back silently.
+func TestParseUpdateInvalidCheckInterval(t *testing.T) {
+	for _, bad := range []string{"soon", "0s", "-2h", ""} {
+		t.Run(bad, func(t *testing.T) {
+			_, err := parse("myconf.toml", []byte("schema = 1\n[update]\ncheck_interval = \""+bad+"\"\n"))
+			if err == nil {
+				t.Fatalf("check_interval %q should error", bad)
+			}
+			if !strings.Contains(err.Error(), "myconf.toml") || !strings.Contains(err.Error(), "check_interval") {
+				t.Errorf("error should name file and option: %v", err)
+			}
+		})
+	}
+}
+
+func TestParseSelfUpdateRebind(t *testing.T) {
+	s, err := parse("config.toml", []byte("schema = 1\n[keys]\nself-update = [\"ctrl+u\"]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Keys["self-update"]; len(got) != 1 || got[0] != "ctrl+u" {
+		t.Errorf("self-update rebind = %v, want [ctrl+u]", got)
+	}
+	if len(s.Keys["quit"]) != 2 {
+		t.Error("rebinding self-update disturbed other actions")
 	}
 }
 
@@ -206,8 +257,8 @@ func TestInitConfigWritesAndRefuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("file not written: %v", err)
 	}
-	// All five sections documented.
-	for _, sec := range []string{"[keys]", "[theme]", "[history]", "[ui]", "[notify]", "[run]"} {
+	// Every section documented.
+	for _, sec := range []string{"[keys]", "[theme]", "[history]", "[ui]", "[notify]", "[run]", "[update]"} {
 		if !strings.Contains(string(data), sec) {
 			t.Errorf("template missing section %q", sec)
 		}

@@ -255,36 +255,120 @@ func (m *Model) footerHints() []footerHint {
 	// stop is a global action but only meaningful while a run is active; surface it
 	// first in every pane's footer during a run so it stays discoverable whatever
 	// pane is focused (the user is usually watching Output as a run streams).
+	var lead []footerHint
 	if m.running {
-		hints = append([]footerHint{{"x", "stop"}}, hints...)
+		lead = append(lead, footerHint{"x", "stop"})
 	}
 	// A running step sitting on an interactive prompt gets the loudest hint,
 	// ahead of everything else and whatever pane is focused, so a sudo password
 	// prompt cannot be mistaken for output the user should type over blindly.
 	if m.awaitInput && !m.typing {
-		hints = append([]footerHint{{"i", "type password"}}, hints...)
+		lead = append([]footerHint{{"i", "type password"}}, lead...)
 	}
-	return hints
+	// A transient self-update note goes after those two and ahead of navigation:
+	// it must be readable (a note nobody can see is not a discoverable reason)
+	// without ever pushing a safety hint off a narrow screen.
+	if m.updateNote != "" {
+		lead = append(lead, footerHint{"", "· " + m.updateNote})
+	}
+	return append(lead, hints...)
 }
 
 // renderFooterBar renders the context hints as boxed keycaps + muted labels on
-// the left and the build version on the far right, truncated (ANSI-aware) to
-// the terminal width. Hints take priority over the version under tight width.
+// the left and the version/update badge on the far right, truncated (ANSI-aware)
+// to the terminal width. The left side takes priority over the right under tight
+// width, so the badge never pushes a hint off screen.
 func (m *Model) renderFooterBar() string {
+	w := m.width - 2
+	if w < 1 {
+		w = 1
+	}
+	return " " + padBetween(m.footerLeft(), m.footerVersion(), w-1)
+}
+
+// footerLeft is the footer's left side. The confirm prompt and the apply
+// progress are modal, so they replace the hints; a transient note is appended
+// after them instead, because it must never displace the run's `x stop` or the
+// `i type password` prompt hint (which is the loudest safety hint in the UI).
+func (m *Model) footerLeft() string {
+	if s := m.updateBarText(); s != "" {
+		return s
+	}
 	var b strings.Builder
 	for i, h := range m.footerHints() {
 		if i > 0 {
 			b.WriteString("  ")
 		}
-		b.WriteString(m.st.keycap.Render(h.key))
-		b.WriteByte(' ')
+		// A keyless entry is prose (the self-update note), not a binding.
+		if h.key != "" {
+			b.WriteString(m.st.keycap.Render(h.key))
+			b.WriteByte(' ')
+		}
 		b.WriteString(m.st.muted.Render(h.label))
 	}
-	w := m.width - 2
-	if w < 1 {
-		w = 1
+	return b.String()
+}
+
+// updateBarText renders the self-update flow's modal footer line: the confirm
+// prompt or live download progress. Empty when neither applies.
+func (m *Model) updateBarText() string {
+	switch {
+	case m.updateState == updateApplying:
+		return m.st.selected.Render("updating") + " " + m.st.muted.Render(m.updateProgressText())
+	case m.updateState == updateConfirming:
+		latest := "the latest release"
+		if m.updateInfo != nil {
+			latest = m.updateInfo.Latest
+		}
+		// Claim only what is actually guaranteed: an allowlisted HTTPS download
+		// whose checksum is verified. There is no code signing behind this.
+		return m.st.selected.Render("Update to "+latest+"?") + " " +
+			m.st.muted.Render("checksum-verified over HTTPS before replacing") + "  " +
+			m.st.keycap.Render("⏎/y") + " " + m.st.muted.Render("confirm") + "  " +
+			m.st.keycap.Render("esc") + " " + m.st.muted.Render("cancel")
 	}
-	return " " + padBetween(b.String(), m.st.muted.Render(m.version), w-1)
+	return ""
+}
+
+// updateProgressText renders download progress. A server that reports no length
+// yields an indeterminate readout (bytes so far) rather than a bogus percentage.
+func (m *Model) updateProgressText() string {
+	if m.updateTotal > 0 {
+		pct := m.updateDownloaded * 100 / m.updateTotal
+		return fmt.Sprintf("%d%%  %s / %s", pct, humanBytes(m.updateDownloaded), humanBytes(m.updateTotal))
+	}
+	return humanBytes(m.updateDownloaded) + " downloaded"
+}
+
+// footerVersion is the footer's far-right cell: the plain build version, or the
+// update badge / check-failure suffix once the launch check has resolved. Both
+// persist (no auto-dismiss) until the next check replaces them.
+func (m *Model) footerVersion() string {
+	switch {
+	case m.updateErr != nil:
+		return lipgloss.NewStyle().Foreground(m.st.failure).Render(m.version + " (check failed)")
+	case m.updateInfo != nil && m.updateInfo.Available:
+		return m.st.selected.Render(m.updateInfo.Current + " → " + m.updateInfo.Latest)
+	default:
+		return m.st.muted.Render(m.version)
+	}
+}
+
+// humanBytes formats a byte count for the progress readout: whole units, one
+// decimal place above a kilobyte.
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%dB", n)
+	}
+	v := float64(n)
+	for _, suffix := range []string{"KiB", "MiB", "GiB"} {
+		v /= unit
+		if v < unit {
+			return fmt.Sprintf("%.1f%s", v, suffix)
+		}
+	}
+	return fmt.Sprintf("%.1fTiB", v/unit)
 }
 
 // glyph returns a step/run status marker colored by the theme: success/failure

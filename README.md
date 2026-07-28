@@ -13,6 +13,10 @@ The dashboard has three titled, focus-highlighted panes — **Steps** (with
 read-only browser of past runs), and **Output** — plus a config layer for keys,
 theme, history location, and behavior (`$XDG_CONFIG_HOME/upall/config.toml`).
 
+`upall` also updates itself: it notices a newer GitHub release on launch and
+`--update` (or `U` in the TUI) replaces the running binary in place after a
+confirm prompt. See [Self-update](#self-update).
+
 ## Install
 
 ### Via chezmoi (auto-latest)
@@ -29,6 +33,11 @@ The dotfiles repo pulls the latest release binary through `.chezmoiexternal.toml
 ```
 
 `chezmoi apply --refresh-externals` pulls a newer release.
+
+If you self-update with `upall --update`, run `chezmoi apply --refresh-externals`
+afterwards. Within the 168h `refreshPeriod`, plain `chezmoi apply`/`chezmoi
+update` reuses the cached archive and would restore the previous version over
+the one you just installed.
 
 ### From source
 
@@ -57,9 +66,54 @@ upall --list          List steps (key, label, applies?, detect-ok?).
 upall --plain         Force plain output (no color); still tees logs.
 upall --init-config   Write a commented config.toml with all defaults.
 upall --config-path   Print the resolved config file path.
+upall --check-update  Check for a newer release now (ignores the cache).
+upall --update        Replace upall with the latest release, after a prompt.
+upall --update --yes  Same, without the prompt (for non-interactive use).
 upall --version       Print version.
 upall -h | --help     Show this help.
 ```
+
+### Self-update
+
+`upall` checks GitHub for a newer release on launch, at most once per
+`[update] check_interval` (default 16h), and mentions one in the TUI footer or
+after the plain-mode summary. The check runs alongside your steps and never
+delays them.
+
+**A failed check never fails a run.** No network, a rate-limited API, or a bad
+response prints a one-line reason and nothing else — the run's exit code is
+unaffected. `--check-update` and `--update` exit `1` when they could not reach a
+verdict, distinct from `2` for a usage error (e.g. `--update` with no terminal
+and no `--yes`), so a script can tell "couldn't check" from "wrong invocation".
+
+`--update` downloads the release archive for your platform, verifies its sha256
+against the release's `checksums.txt`, and replaces the running binary with an
+atomic rename. The previous binary is kept as `.upall.old` next to it until the
+next launch, and the new one has to pass a `--version` smoke test or it is
+rolled back — a failed update never leaves you without a working `upall`. Both
+downloads must come from an allowlisted GitHub host over HTTPS. That proves the
+bytes arrived intact from the published release; there is no code signing, so it
+does not vouch for the release itself.
+
+In the TUI the check shows up on the right of the footer: `v1.4.0 → v1.5.0` when
+a newer release exists, or a quiet `v1.4.0 (check failed)` when the check could
+not reach a verdict. Both persist until the next check replaces them — neither is
+a toast, and neither ever opens a dialog over the dashboard. Hints keep priority
+over the badge on a narrow terminal.
+
+`U` then walks the update: it asks for confirmation in the footer, shows live
+download progress, and once the new binary is in place it exits the dashboard the
+same way `q` does — summary, logs, and manifest all written — before restarting
+in place with your original arguments. `U` is a no-op while a run is active (the
+footer says to stop the run first), so a self-update can never orphan a step's
+child process. After a failed check, `U` shows the reason instead of the prompt.
+Quitting mid-update abandons the download but still waits for an install already
+underway, so exiting can never leave you between two binaries; a failed install
+prints its full reason (including any manual recovery step) after the dashboard
+closes.
+
+Set `[update] enabled = false` to switch all of it off — the launch check, the
+footer badge, `U`, and both flags.
 
 `UPALL_KEEP=N` retains N run-log dirs (default 10; overrides `config.toml`). Every
 step's full output is tee'd to `<history-dir>/<timestamp>/NN-key.log`, and each
@@ -88,6 +142,7 @@ key below is rebindable via `[keys]` in `config.toml`.
 | `w` | Toggle line wrap for a history log in the Output pane | any |
 | `l` | Open the selected log in the pager | Steps / History |
 | `c` / `C` | Open `config.toml` / the config folder | any |
+| `U` | Self-update: confirm, download, replace, and restart in place | any (when idle) |
 | `?` | Toggle the full-key footer | any |
 | `x` | Stop the current run and stay in the TUI (no-op when idle) | any |
 | `i` | Type mode: forward keystrokes to the running step (e.g. a sudo password) | any (during a run) |
@@ -140,6 +195,10 @@ enabled = true               # desktop notification on a failed run
 
 [run]
 shell = "bash"               # default shell for steps without their own `shell`
+
+[update]
+enabled        = true        # false also disables --check-update / --update
+check_interval = "16h"       # how long a version check is cached
 ```
 
 The step shell resolves as `step.shell` › `[run] shell` (default `bash`) ›
@@ -149,7 +208,12 @@ host without bash; a per-step `shell` is used verbatim.
 
 Rebindable actions: `up, down, top, bottom, start, follow, all-logs, retry,
 continue, restart, pager, stop, type, quit, focus-next, focus-prev, filter-next,
-filter-prev, toggle, expand, collapse, wrap, open-config, open-config-dir`.
+filter-prev, toggle, expand, collapse, wrap, open-config, open-config-dir,
+self-update`.
+
+`self-update` (default `U`) checks for a newer release and, after a confirm
+prompt, replaces the running binary in place. `[update] enabled = false`
+switches it off along with the launch check and the footer badge.
 
 `stop` (default `x`) cancels the active run and leaves the TUI open: the running
 step is marked aborted, steps that had not started stay pending, and the header

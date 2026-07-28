@@ -25,7 +25,7 @@ schema = 1
 # list). Known actions: up, down, top, bottom, start, follow, all-logs, retry,
 # continue, restart, pager, stop, type, quit, focus-next, focus-prev,
 # filter-next, filter-prev, toggle, expand, collapse, wrap, open-config,
-# open-config-dir.
+# open-config-dir, self-update.
 # [keys]
 # up          = ["up", "k"]
 # down        = ["down", "j"]
@@ -51,6 +51,7 @@ schema = 1
 # wrap        = ["w"]
 # open-config     = ["c"]
 # open-config-dir = ["C"]
+# self-update     = ["U"]
 
 # [theme] colors accept a named color, a 256-palette index, or a hex value.
 # [theme]
@@ -76,6 +77,14 @@ schema = 1
 # [notify] desktop notification on a failed run.
 # [notify]
 # enabled = true
+
+# [update] self-update. enabled = false switches off the launch check, the
+# footer badge, and the --check-update/--update commands alike.
+# check_interval is how long a version check is cached before another one hits
+# the network.
+# [update]
+# enabled        = true
+# check_interval = "16h"
 
 # [run] default shell for steps that do not set their own "shell". A per-step
 # shell wins; the configured shell is used when present on PATH, else upall

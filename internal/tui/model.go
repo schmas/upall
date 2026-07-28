@@ -18,6 +18,7 @@ import (
 	"github.com/schmas/upall/internal/engine"
 	"github.com/schmas/upall/internal/history"
 	"github.com/schmas/upall/internal/settings"
+	selfupdate "github.com/schmas/upall/internal/update"
 )
 
 const (
@@ -109,6 +110,17 @@ type histRow struct {
 	step int // step-child index into run.Steps (histRowStep only)
 }
 
+// updateState is the self-update flow's position: idle, waiting for the user to
+// confirm, or replacing the binary. It is deliberately narrow — it changes the
+// meaning of only the confirm/cancel keys, never the rest of the dashboard's.
+type updateState int
+
+const (
+	updateIdle updateState = iota
+	updateConfirming
+	updateApplying
+)
+
 // runControl holds everything needed to drive and cancel a run. The model holds
 // a pointer to it; the runner is filled in after the tea.Program exists (the
 // sink needs the program), and the model sees it through the pointer.
@@ -177,6 +189,35 @@ type Model struct {
 	ready         bool
 	quitting      bool
 
+	// Self-update state. updateInfo is set only when a newer release exists;
+	// updateErr keeps a failed check discoverable (footer suffix + the reason on
+	// the self-update key) without ever blocking the dashboard. updateNote is a
+	// transient one-liner cleared by the next keypress.
+	updateInfo  *selfupdate.Info
+	updateErr   error
+	updateNote  string
+	updateState updateState
+	// Download progress while applying. total is <= 0 when the server reported
+	// no length, which renders as an indeterminate byte count.
+	updateDownloaded int64
+	updateTotal      int64
+	updateProgressCh chan updateProgress
+	// applyCancel aborts an in-flight apply (quit while downloading);
+	// applyDone closes when the apply goroutine returns, so Run can make sure
+	// the process never exits in the middle of replacing the binary. Both are
+	// nil unless an apply is in flight.
+	applyCancel context.CancelFunc
+	applyDone   chan struct{}
+	// pendingReexec is the replaced binary's path, set once Apply succeeds and
+	// read by Run after the program loop and all teardown have finished — the
+	// exec itself must never happen from inside the update loop.
+	pendingReexec      string
+	pendingChezmoiNote string
+	// pendingUpdateErr is a failed apply's full error text. The footer cell it
+	// also appears in is width-truncated, and the worst-case message is manual
+	// recovery instructions, so Run prints it in full after teardown.
+	pendingUpdateErr error
+
 	// Pane rectangles, recomputed on resize; the view composes to match and the
 	// mouse handler hit-tests against them.
 	stepsRect rect
@@ -240,11 +281,31 @@ func New(steps []engine.Step, root string, keep int, rc *runControl, set setting
 	return m
 }
 
-// Init starts the spinner and elapsed ticker. The run does NOT start here: the
-// TUI opens on the idle dashboard (steps shown as pending) and waits for the
-// user to press the start key, so nothing executes until then.
+// Init starts the spinner and elapsed ticker, and fires the session's single
+// version check. The run does NOT start here: the TUI opens on the idle
+// dashboard (steps shown as pending) and waits for the user to press the start
+// key, so nothing executes until then.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(m.spin.Tick, tickCmd())
+	cmds := []tea.Cmd{m.spin.Tick, tickCmd()}
+	// The [update] kill switch covers the footer badge too, not just the
+	// explicit commands: disabled means upall makes no release request at all.
+	// Plain mode gates its own passive check on !useTUI, so exactly one check
+	// runs per process.
+	if m.set.Update.Enabled {
+		cmds = append(cmds, m.checkUpdateCmd())
+	}
+	return tea.Batch(cmds...)
+}
+
+// checkUpdateCmd runs the cached version check off the update loop and reports
+// the outcome as a message. Everything the goroutine needs is captured before
+// it starts, so it never reads model state concurrently.
+func (m *Model) checkUpdateCmd() tea.Cmd {
+	version, interval := m.version, m.set.Update.CheckInterval
+	return func() tea.Msg {
+		info, err := checkForUpdate(version, interval)
+		return updateCheckedMsg{info: info, err: err}
+	}
 }
 
 // begin launches the run once the user confirms from the idle dashboard. launch
