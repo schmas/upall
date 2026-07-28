@@ -30,6 +30,11 @@ The dotfiles repo pulls the latest release binary through `.chezmoiexternal.toml
 
 `chezmoi apply --refresh-externals` pulls a newer release.
 
+If you self-update with `upall --update`, run `chezmoi apply --refresh-externals`
+afterwards. Within the 168h `refreshPeriod`, plain `chezmoi apply`/`chezmoi
+update` reuses the cached archive and would restore the previous version over
+the one you just installed.
+
 ### From source
 
 ```sh
