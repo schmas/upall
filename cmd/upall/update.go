@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"time"
 
-	"github.com/schmas/upall/internal/engine"
 	"github.com/schmas/upall/internal/settings"
 	"github.com/schmas/upall/internal/update"
 )
@@ -32,12 +30,13 @@ var (
 	checkForUpdate = update.MaybeCheck
 	applyUpdate    = update.Apply
 	cleanupOldExe  = update.CleanupOld
+	reexecUpdated  = update.Reexec
 )
 
-// updateCachePath is where the version check caches its last observation. It
-// lives under the engine cache root, not the (user-repurposable) history dir.
+// updateCachePath is where the version check caches its last observation. The
+// TUI checks through the same path, so both surfaces share one cache entry.
 func updateCachePath() string {
-	return filepath.Join(engine.CacheRoot(), "update-check.json")
+	return update.CachePath()
 }
 
 // disabledNotice reports the config kill switch. It covers the explicit flags

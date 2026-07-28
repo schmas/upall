@@ -95,8 +95,25 @@ downloads must come from an allowlisted GitHub host over HTTPS. That proves the
 bytes arrived intact from the published release; there is no code signing, so it
 does not vouch for the release itself.
 
+In the TUI the check shows up on the right of the footer: `v1.4.0 → v1.5.0` when
+a newer release exists, or a quiet `v1.4.0 (check failed)` when the check could
+not reach a verdict. Both persist until the next check replaces them — neither is
+a toast, and neither ever opens a dialog over the dashboard. Hints keep priority
+over the badge on a narrow terminal.
+
+`U` then walks the update: it asks for confirmation in the footer, shows live
+download progress, and once the new binary is in place it exits the dashboard the
+same way `q` does — summary, logs, and manifest all written — before restarting
+in place with your original arguments. `U` is a no-op while a run is active (the
+footer says to stop the run first), so a self-update can never orphan a step's
+child process. After a failed check, `U` shows the reason instead of the prompt.
+Quitting mid-update abandons the download but still waits for an install already
+underway, so exiting can never leave you between two binaries; a failed install
+prints its full reason (including any manual recovery step) after the dashboard
+closes.
+
 Set `[update] enabled = false` to switch all of it off — the launch check, the
-footer badge, and both flags.
+footer badge, `U`, and both flags.
 
 `UPALL_KEEP=N` retains N run-log dirs (default 10; overrides `config.toml`). Every
 step's full output is tee'd to `<history-dir>/<timestamp>/NN-key.log`, and each
@@ -125,6 +142,7 @@ key below is rebindable via `[keys]` in `config.toml`.
 | `w` | Toggle line wrap for a history log in the Output pane | any |
 | `l` | Open the selected log in the pager | Steps / History |
 | `c` / `C` | Open `config.toml` / the config folder | any |
+| `U` | Self-update: confirm, download, replace, and restart in place | any (when idle) |
 | `?` | Toggle the full-key footer | any |
 | `x` | Stop the current run and stay in the TUI (no-op when idle) | any |
 | `i` | Type mode: forward keystrokes to the running step (e.g. a sudo password) | any (during a run) |

@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/schmas/upall/internal/engine"
+	selfupdate "github.com/schmas/upall/internal/update"
 )
 
 // Messages carry runner events (via the sink) and timers into the update loop.
@@ -35,6 +36,34 @@ type RunDoneMsg struct{}
 type pagerDoneMsg struct{ err error }
 
 type tickMsg time.Time
+
+// updateCheckedMsg carries the launch version check's outcome. err is reported
+// in the footer and never fails the TUI: not knowing whether an update exists
+// is not a reason to interrupt a run.
+type updateCheckedMsg struct {
+	info *selfupdate.Info
+	err  error
+}
+
+// updateProgress is one download-progress observation, sent from the apply
+// goroutine's onProgress callback over a buffered channel. total is -1 when the
+// server reported no length.
+type updateProgress struct{ downloaded, total int64 }
+
+// updateProgressMsg delivers a progress observation into the update loop. done
+// is set when the progress channel closed, which tells the handler to stop
+// re-issuing the listener.
+type updateProgressMsg struct {
+	updateProgress
+	done bool
+}
+
+// updateAppliedMsg reports the finished download/verify/replace. On success the
+// model records the new binary's path for Run to re-exec after teardown.
+type updateAppliedMsg struct {
+	res selfupdate.ApplyResult
+	err error
+}
 
 // histSelectMsg fires after the History load-on-navigate debounce elapses. gen
 // is the generation captured when the cursor last moved; the handler acts only

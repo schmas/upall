@@ -7,7 +7,17 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/schmas/upall/internal/engine"
 )
+
+// CachePath is the default location of the version-check cache. It lives under
+// the engine cache root rather than the history dir, which the user can point
+// anywhere. Both the CLI flags and the TUI check through this one path so a
+// launch check and a forced check share one cache entry.
+func CachePath() string {
+	return filepath.Join(engine.CacheRoot(), "update-check.json")
+}
 
 // MaybeCheck is the single entry point both plain-mode and the TUI call: it
 // returns a cached Info if the last check is within interval, otherwise

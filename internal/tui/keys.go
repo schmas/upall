@@ -39,6 +39,8 @@ type keyMap struct {
 	OpenConfig    key.Binding
 	OpenConfigDir key.Binding
 
+	SelfUpdate key.Binding
+
 	Help key.Binding
 }
 
@@ -83,6 +85,8 @@ func keysFrom(set settings.Settings) keyMap {
 		OpenConfig:    bind("open-config", "c", "config file"),
 		OpenConfigDir: bind("open-config-dir", "C", "config dir"),
 
+		SelfUpdate: bind("self-update", "U", "self-update"),
+
 		Help: key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	}
 }
@@ -97,6 +101,6 @@ func (k keyMap) FullHelp() [][]key.Binding {
 		{k.Up, k.Down, k.Top, k.Bottom, k.FocusNext, k.FocusPrev},
 		{k.Start, k.Follow, k.All, k.Retry, k.Continue, k.Restart, k.Pager},
 		{k.FilterPrev, k.FilterNext, k.Toggle, k.Expand, k.Collapse},
-		{k.Wrap, k.OpenConfig, k.OpenConfigDir, k.TypeMode, k.Stop, k.Quit},
+		{k.Wrap, k.OpenConfig, k.OpenConfigDir, k.TypeMode, k.Stop, k.SelfUpdate, k.Quit},
 	}
 }

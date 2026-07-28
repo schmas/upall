@@ -131,9 +131,21 @@ func run(steps []engine.Step, plainFlag bool, set settings.Settings, version str
 	if useTUI {
 		// The TUI creates its run dir lazily, on the first run, so merely opening
 		// the dashboard records nothing and never rotates real history.
-		failed, err := tui.Run(steps, root, keep, set, version)
+		failed, newExe, err := tui.Run(steps, root, keep, set, version)
 		if err != nil {
 			fail(err)
+		}
+		if newExe != "" {
+			// Everything the old process owned is done: the terminal is restored,
+			// children are reaped, and cancelling the keepalive here (rather than
+			// leaving it to the deferred call, which exec would skip) is the last
+			// step before the process image is replaced.
+			saCancel()
+			if err := reexecUpdated(newExe); err != nil {
+				// Reexec only returns on failure. The update itself landed, so
+				// report it and exit normally — the new binary runs next launch.
+				fmt.Fprintf(os.Stderr, "upall: %v\n", err)
+			}
 		}
 		return failed
 	}
