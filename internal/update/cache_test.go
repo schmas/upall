@@ -13,9 +13,7 @@ import (
 
 func newLatestServer(t *testing.T, tag string) *httptest.Server {
 	t.Helper()
-	var hits int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits++
 		w.Write([]byte(`{"tag_name":"` + tag + `","assets":[]}`))
 	}))
 	origBase := apiBaseURL
