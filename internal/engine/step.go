@@ -95,8 +95,13 @@ type Step struct {
 	Detect  string   // shell snippet; exit 0 => applies (evaluated by config layer)
 	Shell   string   // shell used to run commands; empty => default (bash|sh)
 	Sudo    bool     // step needs sudo primed before the run
-	Run     []string // commands; each run via `shell -c`, all attempted, fail if any fails
+	Run     []string // commands; each run via `shell -c`, stop at first failure unless ContinueOnError
 	Env     map[string]string
+
+	// ContinueOnError keeps running the remaining commands in Run after one
+	// fails (the step still ends Failed if any command failed). Default false:
+	// fast-fail, so e.g. `brew cleanup` does not run after `brew upgrade` fails.
+	ContinueOnError bool
 	Order   int           // explicit sort order mirroring v2
 	Timeout time.Duration // per-step hang watchdog; 0 means no timeout
 

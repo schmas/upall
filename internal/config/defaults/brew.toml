@@ -1,7 +1,8 @@
 schema = 1
 
-# Homebrew: refresh formulae, upgrade, prune. All three run even if one fails
-# (the step fails if any command fails), mirroring v2.
+# Homebrew: refresh formulae, upgrade, prune. Fast-fails: if `brew upgrade`
+# errors (e.g. a cask conflict), `brew cleanup` is skipped so the failure stays
+# visible instead of being buried under cleanup output.
 [[step]]
 key = "brew"
 label = "Homebrew"
@@ -9,3 +10,4 @@ detect = "command -v brew"
 run = ["brew update", "brew upgrade -y", "brew cleanup"]
 order = 30
 timeout = "60m"
+continue_on_error = false

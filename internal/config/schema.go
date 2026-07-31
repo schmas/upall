@@ -22,18 +22,19 @@ type File struct {
 // zero value like sudo=false or order=0 — a plain bool/int could not. Slices
 // use nil-vs-non-nil for the same distinction; Env merges key-wise.
 type StepDef struct {
-	Key     string            `toml:"key"`
-	Label   *string           `toml:"label"`
-	OS      []string          `toml:"os"`
-	Distro  []string          `toml:"distro"`
-	Detect  *string           `toml:"detect"`
-	Shell   *string           `toml:"shell"`
-	Sudo    *bool             `toml:"sudo"`
-	Run     []string          `toml:"run"`
-	Env     map[string]string `toml:"env"`
-	Enabled *bool             `toml:"enabled"`
-	Order   *int              `toml:"order"`
-	Timeout *string           `toml:"timeout"`
+	Key             string            `toml:"key"`
+	Label           *string           `toml:"label"`
+	OS              []string          `toml:"os"`
+	Distro          []string          `toml:"distro"`
+	Detect          *string           `toml:"detect"`
+	Shell           *string           `toml:"shell"`
+	Sudo            *bool             `toml:"sudo"`
+	Run             []string          `toml:"run"`
+	Env             map[string]string `toml:"env"`
+	Enabled         *bool             `toml:"enabled"`
+	Order           *int              `toml:"order"`
+	Timeout         *string           `toml:"timeout"`
+	ContinueOnError *bool             `toml:"continue_on_error"`
 }
 
 // Resolved pairs a runtime Step with whether it applies to this host.
@@ -47,16 +48,17 @@ type Resolved struct {
 // for unset optional fields.
 func toStep(d StepDef) (engine.Step, error) {
 	s := engine.Step{
-		Key:    d.Key,
-		Label:  d.Key,
-		OS:     d.OS,
-		Distro: d.Distro,
-		Run:    d.Run,
-		Env:    d.Env,
-		Order:  deref(d.Order, 0),
-		Sudo:   deref(d.Sudo, false),
-		Detect: deref(d.Detect, ""),
-		Shell:  deref(d.Shell, ""),
+		Key:             d.Key,
+		Label:           d.Key,
+		OS:              d.OS,
+		Distro:          d.Distro,
+		Run:             d.Run,
+		Env:             d.Env,
+		Order:           deref(d.Order, 0),
+		Sudo:            deref(d.Sudo, false),
+		Detect:          deref(d.Detect, ""),
+		Shell:           deref(d.Shell, ""),
+		ContinueOnError: deref(d.ContinueOnError, false),
 	}
 	if d.Label != nil {
 		s.Label = *d.Label

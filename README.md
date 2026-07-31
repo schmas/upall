@@ -293,10 +293,17 @@ shell   = "bash"        # default; use "fish" etc. as needed
 sudo    = false
 timeout = "20m"         # per-step hang watchdog
 env     = { FOO = "bar" }
+continue_on_error = false  # default: stop `run[]` at the first failing command
 ```
 
 Fields: `key, label, os[], distro[], detect, shell, sudo, run[], env{}, enabled,
-order, timeout`. Set `enabled = false` to disable an embedded default.
+order, timeout, continue_on_error`. Set `enabled = false` to disable an embedded
+default.
+
+A step with multiple `run[]` commands fast-fails by default: the first
+non-zero command stops the rest (e.g. a failed `brew upgrade` skips `brew
+cleanup`), and the step is reported failed. Set `continue_on_error = true` to
+run every command regardless — the step still fails if any command failed.
 
 > Remote/downloadable plugins are intentionally **not** supported — steps come
 > only from the embedded defaults and your local `steps.d/`. `detect`/`run` are

@@ -55,6 +55,9 @@ func mergeInto(base, over StepDef) StepDef {
 	if over.Timeout != nil {
 		base.Timeout = over.Timeout
 	}
+	if over.ContinueOnError != nil {
+		base.ContinueOnError = over.ContinueOnError
+	}
 	if over.Env != nil {
 		merged := make(map[string]string, len(base.Env)+len(over.Env))
 		for k, v := range base.Env {

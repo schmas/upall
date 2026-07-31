@@ -92,10 +92,26 @@ func TestExitCodePropagates(t *testing.T) {
 	}
 }
 
-func TestMultiCommandFailIfAnyRunsAll(t *testing.T) {
+func TestMultiCommandStopsOnFirstFailure(t *testing.T) {
 	sink := newRecSink()
-	// v2 semantics: every command attempted, step fails if any command fails.
+	// Default (fast-fail): the failing command stops the rest, so the failure
+	// stays visible instead of being buried under later output.
 	steps := []Step{{Key: "m", Run: []string{"echo one", "false", "echo three"}}}
+	NewRunner("", sink).RunAll(context.Background(), steps)
+
+	joined := strings.Join(sink.linesOf(0), " ")
+	if !strings.Contains(joined, "one") || strings.Contains(joined, "three") {
+		t.Fatalf("expected only the first command to run, got %q", joined)
+	}
+	if res := sink.done[0]; res.State != StateFailed {
+		t.Fatalf("done = %+v, want Failed (middle command failed)", res)
+	}
+}
+
+func TestContinueOnErrorRunsAllCommands(t *testing.T) {
+	sink := newRecSink()
+	// v2 semantics, opt-in: every command attempted, step fails if any fails.
+	steps := []Step{{Key: "m", Run: []string{"echo one", "false", "echo three"}, ContinueOnError: true}}
 	NewRunner("", sink).RunAll(context.Background(), steps)
 
 	joined := strings.Join(sink.linesOf(0), " ")

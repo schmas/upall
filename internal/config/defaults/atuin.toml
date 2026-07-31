@@ -1,10 +1,13 @@
 schema = 1
 
-# Atuin shell history: dedup, then sync. Both run even if one fails.
+# Atuin shell history: dedup, then sync. sync should still run even if dedup
+# fails (e.g. a lock conflict) — the two are independent, unlike brew's
+# upgrade->cleanup dependency.
 [[step]]
-key     = "atuin"
-label   = "Atuin"
-detect  = "command -v atuin"
-run     = ["atuin history dedup --before now --dupkeep 1", "atuin sync"]
-order   = 100
-timeout = "15m"
+key               = "atuin"
+label             = "Atuin"
+detect            = "command -v atuin"
+run               = ["atuin history dedup --before now --dupkeep 1", "atuin sync"]
+order             = 100
+timeout           = "15m"
+continue_on_error = true

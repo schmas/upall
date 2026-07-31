@@ -141,9 +141,12 @@ func (r *Runner) runStep(ctx context.Context, steps []Step, i int) {
 	r.sink.StepDone(i, res)
 }
 
-// execStep runs every command of a step. All commands are attempted even if one
-// fails (mirrors v2's `cmd || rc=1` chaining); the step fails if any command
-// fails. It stops early only on timeout or quit.
+// execStep runs each command of a step in order. By default it fast-fails: the
+// first non-zero command stops the remaining commands in Run (e.g. a failed
+// `brew upgrade` skips `brew cleanup`, so the failure stays visible instead of
+// being buried under cleanup output). Set Step.ContinueOnError to run every
+// command regardless, mirroring v2's `cmd || rc=1` chaining. Either way the
+// step fails if any command failed. It stops early on timeout or quit too.
 func (r *Runner) execStep(parent, sctx context.Context, st Step, i int, teeW io.Writer) Result {
 	shell := resolveShell(st.Shell, r.DefaultShell)
 	env := buildEnv(st.Env)
@@ -158,6 +161,9 @@ func (r *Runner) execStep(parent, sctx context.Context, st Step, i int, teeW io.
 		}
 		if rc != 0 {
 			overallRC = rc
+			if !st.ContinueOnError {
+				break
+			}
 		}
 	}
 	if overallRC != 0 {
