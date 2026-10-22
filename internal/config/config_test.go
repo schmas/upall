@@ -107,8 +107,9 @@ func TestEmbeddedRunOrder(t *testing.T) {
 	if len(osApplied) != 1 || osApplied[0] != "os-apt" {
 		t.Fatalf("OS steps applying on Ubuntu = %v, want [os-apt]", osApplied)
 	}
-	// The toolchain steps keep v2's relative order after the OS step.
-	want := []string{"nix", "chezmoi", "brew", "mise", "rust", "uv", "claude", "ak", "fisher", "atuin"}
+	// The toolchain steps keep v2's relative order after the OS step; ak is
+	// embedded but disabled by default, so it is dropped.
+	want := []string{"nix", "chezmoi", "brew", "mise", "rust", "uv", "claude", "fisher", "atuin"}
 	var got []string
 	for _, r := range resolved {
 		if !strings.HasPrefix(r.Key, "os-") {

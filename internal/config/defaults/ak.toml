@@ -4,8 +4,11 @@ schema = 1
 # nested (it streams plain into our pane instead of drawing its own dashboard).
 # Its colored banners are rendered faithfully by the VT emulator, so no NO_COLOR
 # override is needed.
+#
+# Off by default. Opt in with a steps.d/ override of key = "ak" setting enabled = true.
 [[step]]
 key     = "ak"
+enabled = false
 label   = "AgentKit"
 detect  = "command -v ak"
 run     = ['"$HOME/bin/ak-update"']

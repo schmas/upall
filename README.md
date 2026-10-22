@@ -298,7 +298,8 @@ continue_on_error = false  # default: stop `run[]` at the first failing command
 
 Fields: `key, label, os[], distro[], detect, shell, sudo, run[], env{}, enabled,
 order, timeout, continue_on_error`. Set `enabled = false` to disable an embedded
-default.
+default. The embedded `ak` (AgentKit) step is off by default; set
+`enabled = true` on `key = "ak"` to turn it on.
 
 A step with multiple `run[]` commands fast-fails by default: the first
 non-zero command stops the rest (e.g. a failed `brew upgrade` skips `brew
