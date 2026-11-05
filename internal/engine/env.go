@@ -24,11 +24,19 @@ var forceColorEnv = map[string]string{
 
 var colorVars = []string{"CLICOLOR_FORCE", "FORCE_COLOR", "HOMEBREW_COLOR"}
 
+// EnvOverlay is a run-level addition to every step's environment.
+type EnvOverlay struct {
+	Vars       map[string]string // set after the non-interactive and color defaults, before step env
+	PathPrefix string            // directory put first on PATH, after step env is applied
+}
+
 // buildEnv returns the child environment: the current environment, then the
-// non-interactive defaults, then force-color defaults, then the step's own env
-// (highest precedence). If the step requests NO_COLOR, the force-color vars are
-// dropped so the two do not conflict (used by the ck step to keep its pane clean).
-func buildEnv(stepEnv map[string]string) []string {
+// non-interactive defaults, then force-color defaults, then the overlay vars,
+// then the step's own env (highest precedence). If the step requests NO_COLOR,
+// the force-color vars are dropped so the two do not conflict (used by the ck
+// step to keep its pane clean). Finally ov.PathPrefix, if set, is put first on
+// the resulting PATH.
+func buildEnv(stepEnv map[string]string, ov EnvOverlay) []string {
 	m := map[string]string{}
 	for _, kv := range os.Environ() {
 		if k, v, ok := strings.Cut(kv, "="); ok {
@@ -47,8 +55,18 @@ func buildEnv(stepEnv map[string]string) []string {
 			delete(m, k)
 		}
 	}
+	for k, v := range ov.Vars {
+		m[k] = v
+	}
 	for k, v := range stepEnv {
 		m[k] = v
+	}
+	if ov.PathPrefix != "" {
+		if p := m["PATH"]; p != "" {
+			m["PATH"] = ov.PathPrefix + ":" + p
+		} else {
+			m["PATH"] = ov.PathPrefix
+		}
 	}
 	out := make([]string, 0, len(m))
 	for k, v := range m {

@@ -24,7 +24,9 @@ type Runner struct {
 	// shell. Empty ("") means "unset" and behaves exactly like the pre-config
 	// default (defaultShell(): bash→sh). See resolveShell.
 	DefaultShell string
-	sink         Sink
+	// Overlay is added to every step's environment. See EnvOverlay.
+	Overlay EnvOverlay
+	sink    Sink
 
 	mu     sync.Mutex
 	size   ptySize
@@ -149,7 +151,7 @@ func (r *Runner) runStep(ctx context.Context, steps []Step, i int) {
 // step fails if any command failed. It stops early on timeout or quit too.
 func (r *Runner) execStep(parent, sctx context.Context, st Step, i int, teeW io.Writer) Result {
 	shell := resolveShell(st.Shell, r.DefaultShell)
-	env := buildEnv(st.Env)
+	env := buildEnv(st.Env, r.Overlay)
 	overallRC := 0
 	for _, cmdline := range st.Run {
 		rc, oc := r.runCmd(parent, sctx, shell, cmdline, env, i, teeW)
