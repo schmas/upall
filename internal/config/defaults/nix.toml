@@ -2,11 +2,14 @@ schema = 1
 
 # Nix config rebuild. Applies only when a nix-config checkout is present, so it
 # stays inert on hosts that do not use nix (detect via directory existence,
-# ported verbatim from v2's compound guard).
+# ported verbatim from v2's compound guard). `sudo = true` because
+# `nix-config-update` runs `sudo darwin-rebuild switch`; upall asks for the
+# password once before the run.
 [[step]]
 key     = "nix"
 label   = "Nix Config"
 detect  = '[ -d "$HOME/.config/nix-config" ]'
 run     = ["nix-config-update"]
+sudo    = true
 order   = 15
 timeout = "30m"

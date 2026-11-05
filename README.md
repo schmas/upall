@@ -152,7 +152,7 @@ key below is rebindable via `[keys]` in `config.toml`.
 | `U` | Self-update: re-check if needed, then confirm, download, replace, and restart in place | any (when idle) |
 | `?` | Open the Keybindings panel (`↑`/`↓` select, `⏎` run, `/` search, `esc` close) | any |
 | `x` | Stop the current run and stay in the TUI (no-op when idle) | any |
-| `i` | Type mode: forward keystrokes to the running step (e.g. a sudo password) | any (during a run) |
+| `i` | Type mode: forward keystrokes to the running step (e.g. an SSH key passphrase) | any (during a run) |
 | `esc` | Exit type mode back to normal navigation | Output (typing) |
 | `q` / `ctrl-c` | Quit (cancels a running step) | any |
 
@@ -253,19 +253,43 @@ step is marked aborted, steps that had not started stay pending, and the header
 goes idle. Unlike `quit` it does not exit, so `r` (retry), `u` (continue), and
 `R` (re-run) still work afterwards. It is a no-op when no run is active.
 
-Every step's stdin is now a live pty, not `/dev/null`, so a step can prompt for
-input mid-run — the case that motivates this is a step whose `run` invokes
-`sudo` and needs an interactive password (e.g. on a remote host without a
-1Password/Touch-ID sudo integration): the prompt shows up in the Output pane
-like any other output.
+### sudo password
 
-Keystrokes are **not** forwarded by default — they stay bound to the usual
-shortcuts (e.g. `c`/`C` open the config), so typing a password without arming
+If a selected step has `sudo = true`, upall asks for the sudo password once,
+before the first step. The prompt is in the terminal, before the TUI starts. It
+is the same in `--plain` mode.
+
+- upall checks the password before the run (macOS: `dscl . -authonly`; Linux:
+  `sudo -k -A true`). It allows 3 attempts. If you press Ctrl-C, upall exits
+  with code 130 and runs no steps.
+- After the check, every step gets `SUDO_ASKPASS` and a `sudo` wrapper first on
+  `PATH`. The wrapper runs `sudo -A`. Every `sudo` call in every step then gets
+  the password with no prompt in the Output pane. This includes calls that a
+  tool makes itself, such as Homebrew casks, and steps that are not marked
+  `sudo = true`.
+- The password stays in upall's memory only. upall never writes it to disk, to a
+  log or to the environment. A self-update restart (`U`) starts a new process,
+  which asks again.
+- upall does not ask if it runs as root, if stdin is not a TTY, or if sudo needs
+  no password (upall tests this with `sudo -n -k true`).
+- If stdin is not a TTY, steps get only the wrapper, which runs `sudo -n`. A
+  step that needs a password fails at once.
+- Known limitation (Linux): if a fingerprint or U2F PAM module approves the
+  check, the typed password is not proven.
+
+### Other prompts and type mode
+
+Every step's stdin is a live pty, not `/dev/null`, so a step can still prompt
+for other input mid-run, for example an SSH key passphrase. The prompt shows in
+the Output pane like any other output.
+
+Keystrokes are **not** forwarded by default. They stay bound to the usual
+shortcuts (e.g. `c`/`C` open the config), so typing a response without arming
 type mode first would trigger those actions instead. When a running step's
 output looks like a password prompt, upall detects it and shows a
 `⚠ waiting for input · press i to type` warning in the Output title and a
 `type password` hint in the footer. Press `type` (default `i`) — from any pane
-during a run — to forward keystrokes straight to the step; type the password,
+during a run — to forward keystrokes straight to the step; type the response,
 `⏎` to send it, `esc` to leave type mode. A step nobody types into just blocks
 on that read — its `timeout` (or `stop`) is still the way out.
 
@@ -290,7 +314,7 @@ os      = ["linux"]     # platform predicate (empty = any)
 detect  = "command -v mytool"   # run via `sh -c`; exit 0 => applies
 run     = ["mytool update"]
 shell   = "bash"        # default; use "fish" etc. as needed
-sudo    = false
+sudo    = false         # true: upall asks for the sudo password before the run
 timeout = "20m"         # per-step hang watchdog
 env     = { FOO = "bar" }
 continue_on_error = false  # default: stop `run[]` at the first failing command
@@ -300,6 +324,11 @@ Fields: `key, label, os[], distro[], detect, shell, sudo, run[], env{}, enabled,
 order, timeout, continue_on_error`. Set `enabled = false` to disable an embedded
 default. The embedded `ak` (AgentKit) step is off by default; set
 `enabled = true` on `key = "ak"` to turn it on.
+
+`sudo = true` means upall must have the sudo password before the run starts (see
+[sudo password](#sudo-password)). It does not add `sudo` to your commands: write
+`sudo` in `run` yourself. Once upall has the password, every `sudo` call in
+every step gets it, not only in steps marked `sudo = true`.
 
 A step with multiple `run[]` commands fast-fails by default: the first
 non-zero command stops the rest (e.g. a failed `brew upgrade` skips `brew
@@ -312,7 +341,7 @@ run every command regardless — the step still fails if any command failed.
 
 ## Layout
 
-- `cmd/upall` — the command entrypoint (arg parsing, sudo priming, config load, TUI/plain wiring).
+- `cmd/upall` — the command entrypoint (arg parsing, one-time sudo password prompt and askpass setup, config load, TUI/plain wiring).
 - `internal/engine` — UI-agnostic step runner: pty capture, per-step timeout
   watchdog, log teeing, run directories, per-run manifest.
 - `internal/config` — TOML step schema, 2-layer merge, platform/detect resolution.

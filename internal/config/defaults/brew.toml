@@ -2,12 +2,15 @@ schema = 1
 
 # Homebrew: refresh formulae, upgrade, prune. Fast-fails: if `brew upgrade`
 # errors (e.g. a cask conflict), `brew cleanup` is skipped so the failure stays
-# visible instead of being buried under cleanup output.
+# visible instead of being buried under cleanup output. `sudo = true` because
+# casks can call sudo (for example to remove a launchctl service); upall asks
+# for the password once before the run.
 [[step]]
 key = "brew"
 label = "Homebrew"
 detect = "command -v brew"
 run = ["brew update", "brew upgrade -y", "brew cleanup"]
+sudo = true
 order = 30
 timeout = "60m"
 continue_on_error = false

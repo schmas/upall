@@ -233,3 +233,42 @@ func keysOfSteps(ss []engine.Step) []string {
 	}
 	return out
 }
+
+// TestDefaultSudoSteps pins the sudo contract of the embedded defaults. It uses
+// the embedded layer only, so the user's steps.d cannot affect it.
+func TestDefaultSudoSteps(t *testing.T) {
+	defs, err := loadEmbedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byKey := map[string]StepDef{}
+	for _, d := range Merge(defs) {
+		byKey[d.Key] = d
+	}
+	sudo := func(key string) bool {
+		d, ok := byKey[key]
+		if !ok {
+			t.Fatalf("embedded step %q missing", key)
+		}
+		return deref(d.Sudo, false)
+	}
+	for _, key := range []string{"brew", "nix", "os-apt", "os-dnf", "os-pacman"} {
+		if !sudo(key) {
+			t.Errorf("%s: sudo = false, want true", key)
+		}
+	}
+	if sudo("os-macos") {
+		t.Error("os-macos: sudo = true, want false")
+	}
+	runs := map[string][]string{
+		"os-apt":    {"sudo apt-get update", "sudo apt-get upgrade -y"},
+		"os-dnf":    {"sudo dnf upgrade -y"},
+		"os-pacman": {"sudo pacman -Syu --noconfirm"},
+	}
+	for key, want := range runs {
+		got := byKey[key].Run
+		if strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Errorf("%s: run = %q, want %q", key, got, want)
+		}
+	}
+}

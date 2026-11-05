@@ -17,13 +17,16 @@ sudo    = false
 order   = 10
 timeout = "60m"
 
+# The Linux steps call `sudo` in `run`. `sudo = true` makes upall ask for the
+# password once before the run.
+
 # Debian/Ubuntu and derivatives (matched via distro ID or ID_LIKE=debian).
 [[step]]
 key     = "os-apt"
 label   = "OS Update"
 distro  = ["debian", "ubuntu"]
 detect  = "command -v apt-get"
-run     = ["apt-get update", "apt-get upgrade -y"]
+run     = ["sudo apt-get update", "sudo apt-get upgrade -y"]
 sudo    = true
 order   = 10
 timeout = "60m"
@@ -34,7 +37,7 @@ key     = "os-dnf"
 label   = "OS Update"
 distro  = ["fedora", "rhel", "centos", "rocky", "almalinux"]
 detect  = "command -v dnf"
-run     = ["dnf upgrade -y"]
+run     = ["sudo dnf upgrade -y"]
 sudo    = true
 order   = 10
 timeout = "60m"
@@ -45,7 +48,7 @@ key     = "os-pacman"
 label   = "OS Update"
 distro  = ["arch", "manjaro", "endeavouros"]
 detect  = "command -v pacman"
-run     = ["pacman -Syu --noconfirm"]
+run     = ["sudo pacman -Syu --noconfirm"]
 sudo    = true
 order   = 10
 timeout = "60m"
