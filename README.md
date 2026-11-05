@@ -272,8 +272,11 @@ is the same in `--plain` mode.
   which asks again.
 - upall does not ask if it runs as root, if stdin is not a TTY, or if sudo needs
   no password (upall tests this with `sudo -n -k true`).
-- If stdin is not a TTY, steps get only the wrapper, which runs `sudo -n`. A
-  step that needs a password fails at once.
+- If stdin is not a TTY, upall has no password. Steps get the wrapper, which
+  runs `sudo -n`, and `SUDO_ASKPASS` set to a script that always fails. A step
+  that needs a password fails at once. This includes tools that call
+  `/usr/bin/sudo` by full path and add `-A` themselves, such as Homebrew casks:
+  they fail at once instead of waiting until the step timeout.
 - Known limitation (Linux): if a fingerprint or U2F PAM module approves the
   check, the typed password is not proven.
 
@@ -325,10 +328,11 @@ order, timeout, continue_on_error`. Set `enabled = false` to disable an embedded
 default. The embedded `ak` (AgentKit) step is off by default; set
 `enabled = true` on `key = "ak"` to turn it on.
 
-`sudo = true` means upall must have the sudo password before the run starts (see
-[sudo password](#sudo-password)). It does not add `sudo` to your commands: write
-`sudo` in `run` yourself. Once upall has the password, every `sudo` call in
-every step gets it, not only in steps marked `sudo = true`.
+`sudo = true` means upall must have the sudo password before the run starts,
+when it can ask (see [sudo password](#sudo-password)). It does not add `sudo`
+to your commands: write `sudo` in `run` yourself. Once upall has the password,
+every `sudo` call in every step gets it, not only in steps marked
+`sudo = true`.
 
 A step with multiple `run[]` commands fast-fails by default: the first
 non-zero command stops the rest (e.g. a failed `brew upgrade` skips `brew

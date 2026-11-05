@@ -127,7 +127,8 @@ func run(steps []engine.Step, plainFlag bool, set settings.Settings, version str
 
 	// Ask for the sudo password once, before the first step, while stdin is a
 	// real terminal. Setup serves it to `sudo -A` in every step through the
-	// askpass helper, so no step prompts inside the pty (stdin=/dev/null).
+	// askpass helper, so no step shows a sudo prompt in its pty (the step's
+	// stdin is a live pty, so a prompt there would wait for type mode).
 	exe, err := os.Executable()
 	if err != nil {
 		fail(fmt.Errorf("sudo: %w", err))
@@ -152,6 +153,8 @@ func run(steps []engine.Step, plainFlag bool, set settings.Settings, version str
 		// the dashboard records nothing and never rotates real history.
 		failed, newExe, err := tui.Run(steps, root, keep, set, version, sess.Overlay())
 		if err != nil {
+			// fail calls os.Exit, which skips the deferred Close.
+			sess.Close()
 			fail(err)
 		}
 		if newExe != "" {
