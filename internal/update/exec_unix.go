@@ -16,7 +16,7 @@ import (
 //
 // On success it never returns — the process image is gone. Callers MUST invoke
 // it only after all of their own teardown (terminal restore, child reap, sudo
-// keepalive cancel) has completed; this package knows nothing about that
+// session close) has completed; this package knows nothing about that
 // sequence and cannot undo a premature exec.
 func Reexec(exePath string) error {
 	path, args, env, err := reexecArgs(exePath)

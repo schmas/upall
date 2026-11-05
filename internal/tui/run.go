@@ -31,9 +31,12 @@ const applyReapTimeout = 10 * time.Second
 // to the normal buffer, preserving it in scrollback.
 //
 // The re-exec path is returned rather than executed here on purpose: exec must
-// happen only after every caller-side teardown (notably the sudo keepalive) is
-// done, and this function cannot know about that.
-func Run(steps []engine.Step, root string, keep int, set settings.Settings, version string) (int, string, error) {
+// happen only after every caller-side teardown (notably closing the sudo
+// askpass session) is done, and this function cannot know about that.
+//
+// overlay is the run-level env every step gets (the sudo askpass wiring). It is
+// the zero value when no step needs sudo.
+func Run(steps []engine.Step, root string, keep int, set settings.Settings, version string, overlay engine.EnvOverlay) (int, string, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	rc := &runControl{ctx: ctx, cancel: cancel, steps: steps}
 	m := New(steps, root, keep, rc, set, version)
@@ -44,6 +47,7 @@ func Run(steps []engine.Step, root string, keep int, set settings.Settings, vers
 	// runner starts with no dir; the model points it at the dir once a run begins.
 	rc.runner = engine.NewRunner("", sink)
 	rc.runner.DefaultShell = set.Run.Shell
+	rc.runner.Overlay = overlay
 	rc.launch = func(fn func()) {
 		rc.wg.Add(1)
 		go func() {

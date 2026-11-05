@@ -21,6 +21,7 @@ import (
 	"github.com/schmas/upall/internal/plain"
 	"github.com/schmas/upall/internal/platform"
 	"github.com/schmas/upall/internal/settings"
+	"github.com/schmas/upall/internal/sudo"
 	"github.com/schmas/upall/internal/tui"
 )
 
@@ -28,6 +29,13 @@ import (
 var version = "dev"
 
 func main() {
+	// The askpass helper is a re-exec of this binary, started by sudo -A. It
+	// runs before anything else so it stays fast and writes nothing but the
+	// password to stdout.
+	if len(os.Args) == 3 && os.Args[1] == sudo.HelperArg {
+		os.Exit(sudo.RunHelper(os.Args[2], os.Stdout))
+	}
+
 	o, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fail(err)
@@ -117,30 +125,41 @@ func run(steps []engine.Step, plainFlag bool, set settings.Settings, version str
 	}
 	keep := settings.ResolveKeep(set.History.Keep)
 
-	// The sudo keepalive spans the whole session (both modes), so a retried or
-	// late sudo step never has to prompt inside the pty (stdin=/dev/null).
-	saCtx, saCancel := context.WithCancel(context.Background())
-	defer saCancel()
-	if needsSudo(steps) && stdinTTY {
-		if err := primeSudo(); err != nil {
-			fail(fmt.Errorf("sudo is required for a selected step: %w", err))
-		}
-		startSudoKeepalive(saCtx)
+	// Ask for the sudo password once, before the first step, while stdin is a
+	// real terminal. Setup serves it to `sudo -A` in every step through the
+	// askpass helper, so no step prompts inside the pty (stdin=/dev/null).
+	exe, err := os.Executable()
+	if err != nil {
+		fail(fmt.Errorf("sudo: %w", err))
 	}
+	sess, err := sudo.Setup(sudo.Options{
+		Needed:   needsSudo(steps),
+		StdinTTY: stdinTTY,
+		In:       os.Stdin,
+		Out:      os.Stderr,
+		Exe:      exe,
+	})
+	if err != nil {
+		if errors.Is(err, sudo.ErrInterrupted) {
+			return 130
+		}
+		fail(fmt.Errorf("sudo: %w", err))
+	}
+	defer sess.Close()
 
 	if useTUI {
 		// The TUI creates its run dir lazily, on the first run, so merely opening
 		// the dashboard records nothing and never rotates real history.
-		failed, newExe, err := tui.Run(steps, root, keep, set, version)
+		failed, newExe, err := tui.Run(steps, root, keep, set, version, sess.Overlay())
 		if err != nil {
 			fail(err)
 		}
 		if newExe != "" {
 			// Everything the old process owned is done: the terminal is restored,
-			// children are reaped, and cancelling the keepalive here (rather than
-			// leaving it to the deferred call, which exec would skip) is the last
-			// step before the process image is replaced.
-			saCancel()
+			// children are reaped, and closing the sudo session here (rather than
+			// leaving it to the deferred call, which exec would skip) removes the
+			// askpass directory and socket before the process image is replaced.
+			sess.Close()
 			if err := reexecUpdated(newExe); err != nil {
 				// Reexec only returns on failure. The update itself landed, so
 				// report it and exit normally — the new binary runs next launch.
@@ -170,6 +189,7 @@ func run(steps []engine.Step, plainFlag bool, set settings.Settings, version str
 	sink.Begin(fmt.Sprintf("upall %s", version))
 	runner := engine.NewRunner(runDir, sink)
 	runner.DefaultShell = set.Run.Shell
+	runner.Overlay = sess.Overlay()
 	runner.RunAll(ctx, steps)
 
 	// Summary first, then the update notice as a clearly separate trailing
