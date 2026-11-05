@@ -115,8 +115,10 @@ func setup(o Options, d deps) (*Session, error) {
 	return askAndCheck(o, d, realSudo)
 }
 
-// wrapperOnly sets only the sudo wrapper with -n: a step that needs a
-// password fails at once instead of waiting for its timeout.
+// wrapperOnly sets the sudo wrapper with -n: a step that needs a password
+// fails at once instead of waiting for its timeout. It also sets SUDO_ASKPASS
+// to a script that always fails: a tool that calls sudo by full path and adds
+// -A itself (Homebrew) then fails at once too. No password is served.
 func wrapperOnly(realSudo string) (*Session, error) {
 	dir, err := makeDir()
 	if err != nil {
@@ -128,7 +130,15 @@ func wrapperOnly(realSudo string) (*Session, error) {
 		s.Close()
 		return nil, err
 	}
-	s.overlay = engine.EnvOverlay{PathPrefix: binDir}
+	askpass, err := writeFailingAskpass(dir)
+	if err != nil {
+		s.Close()
+		return nil, err
+	}
+	s.overlay = engine.EnvOverlay{
+		Vars:       map[string]string{"SUDO_ASKPASS": askpass},
+		PathPrefix: binDir,
+	}
 	return s, nil
 }
 
@@ -155,7 +165,7 @@ func askAndCheck(o Options, d deps, realSudo string) (*Session, error) {
 		return fail(err)
 	}
 
-	for range maxAttempts {
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		pw, err := d.read()
 		if err != nil {
 			zero(pw)
@@ -179,7 +189,9 @@ func askAndCheck(o Options, d deps, realSudo string) (*Session, error) {
 		if !errors.Is(err, errIncorrect) {
 			return fail(fmt.Errorf("check sudo password: %w", err))
 		}
-		fmt.Fprintln(o.Out, "Sorry, try again.")
+		if attempt < maxAttempts {
+			fmt.Fprintln(o.Out, "Sorry, try again.")
+		}
 	}
 	return fail(ErrTooManyAttempts)
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"time"
@@ -29,10 +30,17 @@ func NoPasswordNeeded(realSudo string) bool {
 	return exec.CommandContext(ctx, realSudo, "-n", "-k", "true").Run() == nil
 }
 
-// checkOnTTY starts argv on a new pty, waits for its prompt (a ':'), writes
-// pw and a newline to the pty and returns nil on exit 0. The password goes
-// only through the pty, never through argv or the environment. Output from
-// the checker is discarded.
+// passwordPrompt is what checkOnTTY waits for, compared in lower case.
+var passwordPrompt = []byte("password")
+
+// maxPromptScan bounds how much early output checkOnTTY keeps to find the
+// prompt.
+const maxPromptScan = 4096
+
+// checkOnTTY starts argv on a new pty, waits for its password prompt (the
+// word "password", any case), writes pw and a newline to the pty and returns
+// nil on exit 0. The password goes only through the pty, never through argv
+// or the environment. Output from the checker is discarded.
 func checkOnTTY(argv []string, pw []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), checkTimeout)
 	defer cancel()
@@ -48,12 +56,19 @@ func checkOnTTY(argv []string, pw []byte) error {
 	go func() {
 		defer close(eof)
 		buf := make([]byte, 256)
-		seen := false
+		var seen []byte // early output, lower case, until the prompt shows
+		found := false
 		for {
 			n, err := ptmx.Read(buf)
-			if !seen && bytes.IndexByte(buf[:n], ':') >= 0 {
-				seen = true
-				close(prompted)
+			if !found && n > 0 {
+				seen = append(seen, bytes.ToLower(buf[:n])...)
+				if bytes.Contains(seen, passwordPrompt) {
+					found = true
+					seen = nil
+					close(prompted)
+				} else if len(seen) > maxPromptScan {
+					seen = seen[len(seen)-len(passwordPrompt):]
+				}
 			}
 			if err != nil {
 				return
@@ -86,21 +101,27 @@ func checkOnTTY(argv []string, pw []byte) error {
 }
 
 // checkWithAskpass arms srv with pw for one request (check mode), then runs
-// `<realSudo> -k -A true` with SUDO_ASKPASS=askpass. Output is discarded.
-// After a wrong password, sudo does not exit: it runs PAM again, and the PAM
-// conversation runs the helper again. The server holds that second request,
-// so PAM waits, and the check kills sudo there. This way a typo causes one
-// failed authentication only (pam_faillock counts each one).
+// `<realSudo> -k -A true` with SUDO_ASKPASS=askpass. sudo runs in its own
+// session on a throwaway pty, and all its output is discarded: sudo writes
+// "Sorry, try again." and the lecture to /dev/tty, which must not be upall's
+// terminal. After a wrong password, sudo does not exit: it runs PAM again,
+// and the PAM conversation runs the helper again. The server holds that
+// second request, so PAM waits, and the check kills sudo there. This way a
+// typo causes one failed authentication only (pam_faillock counts each one).
 func checkWithAskpass(realSudo, askpass string, srv *Server, pw []byte) error {
 	over := srv.ArmCheck(pw)
-	defer srv.Release()
 	ctx, cancel := context.WithTimeout(context.Background(), checkTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, realSudo, "-k", "-A", "true")
 	cmd.Env = append(os.Environ(), "SUDO_ASKPASS="+askpass)
-	if err := cmd.Start(); err != nil {
+	ptmx, err := pty.Start(cmd) // Setsid + Setctty: the pty is sudo's /dev/tty
+	if err != nil {
+		srv.Release()
 		return fmt.Errorf("run %s: %w", realSudo, err)
 	}
+	defer ptmx.Close()
+	defer srv.Release() // runs before ptmx.Close: the held helper exits first
+	go func() { _, _ = io.Copy(io.Discard, ptmx) }()
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
 

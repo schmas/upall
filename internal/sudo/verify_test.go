@@ -86,6 +86,30 @@ func TestCheckOnTTYNoPrompt(t *testing.T) {
 	}
 }
 
+// TestCheckOnTTYNeedsPasswordPrompt: an early line with a ':' that is not a
+// password prompt must not count as the prompt. Here the checker prints an
+// error line and exits 0 without asking; that is not a passed check.
+func TestCheckOnTTYNeedsPasswordPrompt(t *testing.T) {
+	fake := writeScript(t, "echo 'dscl: note: something'\nsleep 0.3\nexit 0\n")
+	err := checkOnTTY([]string{fake}, []byte("pw"))
+	if err == nil || errors.Is(err, errIncorrect) {
+		t.Fatalf("err = %v, want a no-prompt error", err)
+	}
+}
+
+// TestCheckOnTTYLowercasePrompt: the prompt match ignores case.
+func TestCheckOnTTYLowercasePrompt(t *testing.T) {
+	fake := writeScript(t, `echo 'info: starting'
+stty -echo
+printf 'password for me: '
+IFS= read -r line
+[ "$line" = 'pw' ]
+`)
+	if err := checkOnTTY([]string{fake}, []byte("pw")); err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+}
+
 func TestCheckOnTTYMissingBinary(t *testing.T) {
 	err := checkOnTTY([]string{filepath.Join(t.TempDir(), "missing")}, []byte("pw"))
 	if err == nil || errors.Is(err, errIncorrect) {
@@ -99,18 +123,21 @@ func TestCheckOnTTYMissingBinary(t *testing.T) {
 // empty answer to PAM, which counts as a failure. Each askpass call that
 // returns counts as one PAM attempt. The log gets "call" before each askpass
 // call, "attempt" for each PAM attempt and "exit" on a normal exit.
+// Like real sudo, it writes "Sorry, try again." to /dev/tty. The check must
+// give it its own pty (stdin a tty, /dev/tty writable), so nothing reaches
+// upall's terminal.
 func fakeSudo(t *testing.T, want string) (sudo, log string) {
 	t.Helper()
 	log = filepath.Join(t.TempDir(), "log")
 	q := shQuote(log)
 	sudo = writeScript(t, `[ "$*" = "-k -A true" ] || exit 2
-[ -t 0 ] && exit 3
+[ -t 0 ] || exit 3
 for i in 1 2 3; do
   echo call >> `+q+`
   p=$("$SUDO_ASKPASS")
   echo attempt >> `+q+`
   if [ "$p" = `+shQuote(want)+` ]; then echo exit >> `+q+`; exit 0; fi
-  echo 'Sorry, try again.' >&2
+  { echo 'Sorry, try again.' > /dev/tty; } 2>/dev/null || exit 4
 done
 echo exit >> `+q+`
 exit 1

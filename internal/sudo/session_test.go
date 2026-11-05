@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -112,11 +113,29 @@ func TestSetupNoTTYWrapperOnly(t *testing.T) {
 	}
 	defer s.Close()
 	ov := s.Overlay()
-	if _, ok := ov.Vars["SUDO_ASKPASS"]; ok {
-		t.Fatalf("SUDO_ASKPASS set: %+v", ov)
-	}
 	if ov.PathPrefix == "" {
 		t.Fatal("PathPrefix empty, want wrapper dir")
+	}
+	// SUDO_ASKPASS points to a script that always fails, so a tool that calls
+	// sudo by full path with -A (Homebrew) fails at once. No password is served.
+	ap := ov.Vars["SUDO_ASKPASS"]
+	if ap == "" {
+		t.Fatalf("SUDO_ASKPASS not set: %+v", ov)
+	}
+	if s.srv != nil {
+		t.Fatal("server started, want no password served")
+	}
+	fi, err := os.Stat(ap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0o700 {
+		t.Fatalf("askpass mode = %o, want 700", perm)
+	}
+	out, err := exec.Command(ap).Output()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 || len(out) != 0 {
+		t.Fatalf("askpass: out = %q, err = %v, want exit 1 and no output", out, err)
 	}
 	b, err := os.ReadFile(filepath.Join(ov.PathPrefix, "sudo"))
 	if err != nil {
@@ -295,7 +314,8 @@ func TestSetupThreeFailures(t *testing.T) {
 	if f.nCheck != 3 || f.nRead != 3 {
 		t.Fatalf("check = %d, read = %d, want 3, 3", f.nCheck, f.nRead)
 	}
-	if got := o.Out.(*bytes.Buffer).String(); got != "Sorry, try again.\nSorry, try again.\nSorry, try again.\n" {
+	// Only between attempts: not after the last one.
+	if got := o.Out.(*bytes.Buffer).String(); got != "Sorry, try again.\nSorry, try again.\n" {
 		t.Fatalf("out = %q", got)
 	}
 	assertEmptyDir(t, base)

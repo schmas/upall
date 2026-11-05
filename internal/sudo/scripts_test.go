@@ -94,6 +94,47 @@ func TestWrapperPassesArgs(t *testing.T) {
 	}
 }
 
+// TestWrapperStdinSkipsAskpass: sudo rejects -A together with -S, so the -A
+// wrapper leaves -A out when sudo's own options contain -S or --stdin. A -S
+// that belongs to the command (pacman -S) keeps -A.
+func TestWrapperStdinSkipsAskpass(t *testing.T) {
+	dir := t.TempDir()
+	fake := writeFake(t, filepath.Join(dir, "real"))
+	binDir, err := WriteWrapper(filepath.Join(dir, "w"), fake, WrapAskpass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapper := filepath.Join(binDir, "sudo")
+	cases := []struct {
+		args []string
+		want []string
+	}{
+		{[]string{"-S", "apt-get", "a b"}, []string{"-S", "apt-get", "a b"}},
+		{[]string{"--stdin", "true"}, []string{"--stdin", "true"}},
+		{[]string{"-u", "root", "-S", "id"}, []string{"-u", "root", "-S", "id"}},
+		{[]string{"-k", "--user", "root", "--stdin", "id"}, []string{"-k", "--user", "root", "--stdin", "id"}},
+		{[]string{"pacman", "-S", "vim"}, []string{"-A", "pacman", "-S", "vim"}},
+		{[]string{"-u", "root", "pacman", "-S", "vim"}, []string{"-A", "-u", "root", "pacman", "-S", "vim"}},
+		{[]string{"--", "-S"}, []string{"-A", "--", "-S"}},
+		{[]string{"-u", "-S", "x"}, []string{"-A", "-u", "-S", "x"}}, // -S is the user name
+		{[]string{"apt-get", "a b"}, []string{"-A", "apt-get", "a b"}},
+	}
+	for _, c := range cases {
+		if got := outLines(t, wrapper, c.args...); !equal(got, c.want) {
+			t.Errorf("sudo %q: real sudo got %q, want %q", c.args, got, c.want)
+		}
+	}
+
+	// The -n wrapper is not changed.
+	nDir, err := WriteWrapper(filepath.Join(dir, "n"), fake, WrapNonInteractive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := outLines(t, filepath.Join(nDir, "sudo"), "-S", "id"); !equal(got, []string{"-n", "-S", "id"}) {
+		t.Errorf("-n wrapper: got %q", got)
+	}
+}
+
 func TestAskpassLauncherRunsExe(t *testing.T) {
 	for name, dir := range testDirs(t) {
 		t.Run(name, func(t *testing.T) {
