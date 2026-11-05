@@ -93,24 +93,32 @@ func TestCheckOnTTYMissingBinary(t *testing.T) {
 	}
 }
 
-// fakeSudo acts like `sudo -k -A true`: it asks $SUDO_ASKPASS up to 3 times,
-// as sudo does, and logs each askpass call to the returned file.
-func fakeSudo(t *testing.T, want string) (sudo, calls string) {
+// fakeSudo acts like real `sudo -k -A true` with pam_unix: after a wrong
+// password it prints "Sorry, try again." and asks $SUDO_ASKPASS again, up to
+// 3 times. It does not stop when the helper fails: real sudo gives even an
+// empty answer to PAM, which counts as a failure. Each askpass call that
+// returns counts as one PAM attempt. The log gets "call" before each askpass
+// call, "attempt" for each PAM attempt and "exit" on a normal exit.
+func fakeSudo(t *testing.T, want string) (sudo, log string) {
 	t.Helper()
-	calls = filepath.Join(t.TempDir(), "calls")
+	log = filepath.Join(t.TempDir(), "log")
+	q := shQuote(log)
 	sudo = writeScript(t, `[ "$*" = "-k -A true" ] || exit 2
 [ -t 0 ] && exit 3
 for i in 1 2 3; do
-  echo call >> `+shQuote(calls)+`
-  p=$("$SUDO_ASKPASS") || exit 1
-  [ "$p" = `+shQuote(want)+` ] && exit 0
+  echo call >> `+q+`
+  p=$("$SUDO_ASKPASS")
+  echo attempt >> `+q+`
+  if [ "$p" = `+shQuote(want)+` ]; then echo exit >> `+q+`; exit 0; fi
+  echo 'Sorry, try again.' >&2
 done
+echo exit >> `+q+`
 exit 1
 `)
-	return sudo, calls
+	return sudo, log
 }
 
-func countCalls(t *testing.T, path string) int {
+func countLines(t *testing.T, path, line string) int {
 	t.Helper()
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -119,36 +127,75 @@ func countCalls(t *testing.T, path string) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return strings.Count(string(b), "call\n")
+	return strings.Count(string(b), line+"\n")
 }
 
-func TestCheckWithAskpass(t *testing.T) {
+func askpassFor(t *testing.T, srv *Server) string {
+	t.Helper()
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := newServer(t)
 	askpass, err := WriteAskpass(filepath.Dir(srv.SocketPath()), exe, srv.SocketPath())
 	if err != nil {
 		t.Fatal(err)
 	}
-	sudo, calls := fakeSudo(t, "good pw")
+	return askpass
+}
 
-	// A typo: the helper answers the first request only, so sudo gets the
-	// typed password exactly once (one PAM failure), and the retry gets nothing.
+func TestCheckWithAskpass(t *testing.T) {
+	srv := newServer(t)
+	askpass := askpassFor(t, srv)
+	sudo, log := fakeSudo(t, "good pw")
+
+	// A typo: the helper answers the first request only. sudo asks again; the
+	// server holds that request, and the check kills sudo before the second
+	// PAM attempt. So one typo is exactly one PAM failure.
+	start := time.Now()
 	if err := checkWithAskpass(sudo, askpass, srv, []byte("bad")); !errors.Is(err, errIncorrect) {
 		t.Fatalf("wrong password: err = %v, want errIncorrect", err)
 	}
-	if n := countCalls(t, calls); n != 2 {
-		t.Fatalf("askpass calls = %d, want 2 (one answered, one refused)", n)
+	if d := time.Since(start); d >= helperTimeout {
+		t.Fatalf("check took %v, want sudo killed before the helper timeout", d)
+	}
+	if n := countLines(t, log, "attempt"); n != 1 {
+		t.Fatalf("PAM attempts = %d, want 1", n)
+	}
+	if n := countLines(t, log, "call"); n != 2 {
+		t.Fatalf("askpass calls = %d, want 2 (one answered, one held)", n)
+	}
+	if n := countLines(t, log, "exit"); n != 0 {
+		t.Fatal("fake sudo exited normally, want it killed")
+	}
+	// The held helper must not reach PAM later either.
+	time.Sleep(200 * time.Millisecond)
+	if n := countLines(t, log, "attempt"); n != 1 {
+		t.Fatalf("PAM attempts after the check = %d, want 1", n)
 	}
 
 	// The next attempt re-arms the server with the new password.
+	if err := os.Remove(log); err != nil {
+		t.Fatal(err)
+	}
 	if err := checkWithAskpass(sudo, askpass, srv, []byte("good pw")); err != nil {
 		t.Fatalf("right password: %v", err)
 	}
-	if n := countCalls(t, calls); n != 3 {
-		t.Fatalf("askpass calls = %d, want 3", n)
+	if a, e := countLines(t, log, "attempt"), countLines(t, log, "exit"); a != 1 || e != 1 {
+		t.Fatalf("right password: attempts = %d, exits = %d, want 1, 1", a, e)
+	}
+}
+
+// TestCheckWithAskpassOtherFailure: a sudo that exits non-zero for another
+// reason before a second request still maps to errIncorrect.
+func TestCheckWithAskpassOtherFailure(t *testing.T) {
+	srv := newServer(t)
+	askpass := askpassFor(t, srv)
+	sudo := writeScript(t, `p=$("$SUDO_ASKPASS")
+echo 'user is not in the sudoers file' >&2
+exit 1
+`)
+	if err := checkWithAskpass(sudo, askpass, srv, []byte("pw")); !errors.Is(err, errIncorrect) {
+		t.Fatalf("err = %v, want errIncorrect", err)
 	}
 }
 

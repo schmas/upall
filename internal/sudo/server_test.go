@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"testing"
+	"time"
 )
 
 func newServer(t *testing.T) *Server {
@@ -119,6 +120,90 @@ func TestSocketPathLength(t *testing.T) {
 	s := newServer(t)
 	if n := len(s.SocketPath()); n >= 104 {
 		t.Fatalf("socket path length = %d, want < 104 (%s)", n, s.SocketPath())
+	}
+}
+
+// TestServerArmCheckHoldsExtra: during a check, a request beyond the budget
+// gets no reply and stays open, and the server signals it. Release lets the
+// helper exit 1 with no output.
+func TestServerArmCheckHoldsExtra(t *testing.T) {
+	s := newServer(t)
+	over := s.ArmCheck([]byte("pw"))
+	var first bytes.Buffer
+	if code := RunHelper(s.SocketPath(), &first); code != 0 || first.String() != "pw\n" {
+		t.Fatalf("first: code = %d, out = %q", code, first.String())
+	}
+	select {
+	case <-over:
+		t.Fatal("over signalled before an extra request")
+	default:
+	}
+
+	type res struct {
+		code int
+		out  string
+	}
+	second := make(chan res, 1)
+	go func() {
+		var buf bytes.Buffer
+		code := RunHelper(s.SocketPath(), &buf)
+		second <- res{code, buf.String()}
+	}()
+	select {
+	case <-over:
+	case <-time.After(2 * time.Second):
+		t.Fatal("over not signalled for the extra request")
+	}
+	select {
+	case r := <-second:
+		t.Fatalf("extra request answered before release: %+v", r)
+	case <-time.After(200 * time.Millisecond):
+	}
+	s.Release()
+	select {
+	case r := <-second:
+		if r.code != 1 || r.out != "" {
+			t.Fatalf("extra request after release: %+v, want code 1 and no output", r)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("extra request not released")
+	}
+
+	// After Release, an unanswered request is closed at once, as before.
+	var third bytes.Buffer
+	if code := RunHelper(s.SocketPath(), &third); code != 1 || third.Len() != 0 {
+		t.Fatalf("third: code = %d, out = %q", code, third.String())
+	}
+}
+
+// TestServerArmReleasesHeld: Arm and Close release held connections.
+func TestServerArmReleasesHeld(t *testing.T) {
+	for _, name := range []string{"arm", "close"} {
+		t.Run(name, func(t *testing.T) {
+			s := newServer(t)
+			over := s.ArmCheck([]byte("pw"))
+			var buf bytes.Buffer
+			RunHelper(s.SocketPath(), &buf)
+			done := make(chan int, 1)
+			go func() {
+				var b bytes.Buffer
+				done <- RunHelper(s.SocketPath(), &b)
+			}()
+			<-over
+			if name == "arm" {
+				s.Arm([]byte("pw2"), -1)
+			} else {
+				s.Close()
+			}
+			select {
+			case code := <-done:
+				if code != 1 {
+					t.Fatalf("code = %d, want 1", code)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("held connection not released")
+			}
+		})
 	}
 }
 

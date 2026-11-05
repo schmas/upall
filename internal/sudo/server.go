@@ -31,6 +31,12 @@ type Server struct {
 	password []byte
 	budget   int // requests left to answer; < 0 means no limit
 	closed   bool
+
+	// Check mode (ArmCheck): over is closed on the first request beyond the
+	// budget; held keeps such requests open until they are released.
+	over      chan struct{}
+	overFired bool
+	held      []net.Conn
 }
 
 // Listen creates the socket at dir/s with mode 0600 and starts serving.
@@ -56,12 +62,48 @@ func (s *Server) SocketPath() string { return s.path }
 // Arm sets the password and how many requests it answers. budget < 0 means no
 // limit. After the budget is used, a request gets no data (the helper exits 1).
 // Arm stores its own copy of pw, so the caller may zero its slice.
+// Arm also ends check mode (see ArmCheck) and releases held requests.
 func (s *Server) Arm(pw []byte, budget int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.releaseLocked()
 	zero(s.password)
 	s.password = append([]byte(nil), pw...)
 	s.budget = budget
+}
+
+// ArmCheck arms pw for one request, for a password check. A later request
+// gets no reply and is not closed: the server holds it, so the helper (and
+// the PAM conversation that runs it) waits, and the returned channel is
+// closed. The caller then stops sudo before PAM can count a second failure,
+// and calls Release. Arm, ArmCheck and Close also release held requests.
+func (s *Server) ArmCheck(pw []byte) <-chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.releaseLocked()
+	zero(s.password)
+	s.password = append([]byte(nil), pw...)
+	s.budget = 1
+	s.over = make(chan struct{})
+	s.overFired = false
+	return s.over
+}
+
+// Release ends check mode and closes held requests: their helpers exit 1
+// with no output. Later requests beyond the budget are closed at once.
+func (s *Server) Release() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.releaseLocked()
+}
+
+func (s *Server) releaseLocked() {
+	for _, c := range s.held {
+		_ = c.Close()
+	}
+	s.held = nil
+	s.over = nil
+	s.overFired = false
 }
 
 // Close stops serving, waits for the accept loop and zeroes the password.
@@ -78,6 +120,7 @@ func (s *Server) Close() error {
 	<-s.done
 
 	s.mu.Lock()
+	s.releaseLocked()
 	zero(s.password)
 	s.password = nil
 	s.budget = 0
@@ -97,9 +140,9 @@ func (s *Server) serve() {
 }
 
 // answer writes the password to conn, if the budget allows, and closes it.
+// In check mode, a request beyond the budget is held open instead (see
+// ArmCheck).
 func (s *Server) answer(conn net.Conn) {
-	defer conn.Close()
-
 	s.mu.Lock()
 	var reply []byte
 	if len(s.password) > 0 && s.budget != 0 {
@@ -107,8 +150,17 @@ func (s *Server) answer(conn net.Conn) {
 		if s.budget > 0 {
 			s.budget--
 		}
+	} else if s.over != nil {
+		s.held = append(s.held, conn)
+		if !s.overFired {
+			s.overFired = true
+			close(s.over)
+		}
+		s.mu.Unlock()
+		return
 	}
 	s.mu.Unlock()
+	defer conn.Close()
 	defer zero(reply)
 
 	if len(reply) == 0 {

@@ -85,17 +85,34 @@ func checkOnTTY(argv []string, pw []byte) error {
 	return exitResult(ctx, argv[0], cmd.Wait())
 }
 
-// checkWithAskpass arms srv with pw for one request, then runs
-// `<realSudo> -k -A true` with SUDO_ASKPASS=askpass. sudo asks the helper
-// again after a wrong password; the helper then gets nothing, so a typo
-// causes one failed authentication only. Output is discarded.
+// checkWithAskpass arms srv with pw for one request (check mode), then runs
+// `<realSudo> -k -A true` with SUDO_ASKPASS=askpass. Output is discarded.
+// After a wrong password, sudo does not exit: it runs PAM again, and the PAM
+// conversation runs the helper again. The server holds that second request,
+// so PAM waits, and the check kills sudo there. This way a typo causes one
+// failed authentication only (pam_faillock counts each one).
 func checkWithAskpass(realSudo, askpass string, srv *Server, pw []byte) error {
-	srv.Arm(pw, 1)
+	over := srv.ArmCheck(pw)
+	defer srv.Release()
 	ctx, cancel := context.WithTimeout(context.Background(), checkTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, realSudo, "-k", "-A", "true")
 	cmd.Env = append(os.Environ(), "SUDO_ASKPASS="+askpass)
-	return exitResult(ctx, realSudo, cmd.Run())
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("run %s: %w", realSudo, err)
+	}
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+
+	select {
+	case err := <-waited:
+		return exitResult(ctx, realSudo, err)
+	case <-over:
+		// A second request means the first password was wrong.
+		_ = cmd.Process.Kill()
+		<-waited
+		return errIncorrect
+	}
 }
 
 // exitResult maps a checker's exit to nil, errIncorrect or a run error.
